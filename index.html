@@ -79,8 +79,8 @@ const COPIA_INCLUIDA = /*COPIA*/null/*FIN_COPIA*/;
 const $ = s => document.querySelector(s);
 const fecha = $("#fecha"), vista = $("#vista"), menu = $("#menu"), estadoEl = $("#estado");
 const tabs = ["Inicio","Indicadores","Regulación","Noticias"];
-const DESTACADOS = ["pais","brent","wti","t10","fed","eurusd","btc","eth"];
-const PENDIENTES_ECUADOR = ["Inflación mensual, anual y acumulada (INEC)","Desempleo nacional (INEC)","PIB real (BCE)"];
+const DESTACADOS = ["pais","ia","brent","wti","t10","fed","eurusd","btc","eth"];
+const PENDIENTES_ECUADOR = ["Desempleo nacional (INEC)","PIB real (BCE)"];
 let tab = "Inicio", detalle = null, datos = null, series = [], fuentes = {};
 
 async function cargar() {
@@ -135,6 +135,10 @@ function fechaLarga(iso) {
 function corta(iso) {
   return new Date(iso+"T12:00:00Z").toLocaleDateString("es-EC",{day:"numeric",month:"short",year:"2-digit",timeZone:"UTC"});
 }
+function etiqueta(s,iso) {
+  if (s.frecuencia === "mensual") return new Date(iso+"T12:00:00Z").toLocaleDateString("es-EC",{month:"short",year:"numeric",timeZone:"UTC"});
+  return corta(iso);
+}
 function num(v,d) {
   return new Intl.NumberFormat("es-EC",{minimumFractionDigits:d,maximumFractionDigits:d}).format(v);
 }
@@ -184,7 +188,7 @@ function fila(s) {
   const p=puntos(s), u=p.at(-1), e=estado(s,p);
   if (!u) return "";
   return `<button type="button" class="row" data-id="${s.id}">
-    <span><strong>${s.nombre}</strong><small>${corta(u.f)} · ${(fuentes[s.fuente_id]?.cita || "").replace("Fuente: ","").split(" · ")[0]}${s.fuente_id==="coingecko" ? " · prueba" : ""}</small></span>
+    <span><strong>${s.nombre}</strong><small>${etiqueta(s,u.f)} · ${(fuentes[s.fuente_id]?.cita || "").replace("Fuente: ","").split(" · ")[0]}${s.fuente_id==="coingecko" ? " · prueba" : ""}</small></span>
     ${grafico(s.es_rango ? escalones(p.slice(-6)) : p.slice(-20),e.cls,true)}
     <span class="quote ${e.cls}"><strong>${valor(s,u)}</strong><small>${e.texto} ›</small></span>
   </button>`;
@@ -199,15 +203,15 @@ function ficha(s) {
     <h2>${s.nombre}</h2>
     <div class="big ${e.cls}">${valor(s,u)}</div>
     <b class="${e.cls}">${e.texto}</b>
-    <p>Dato del <b>${corta(u.f)}</b>${a?`; comparación con el ${corta(a.f)}`:""}.</p>
-    ${u.f!==fecha.value?`<p class="muted">Sin nueva observación en el corte elegido. Se conserva el último dato disponible.</p>`:""}
+    <p>Dato ${s.frecuencia==="mensual"?"de":"del"} <b>${etiqueta(s,u.f)}</b>${a?`; comparación con ${s.frecuencia==="mensual"?"":"el "}${etiqueta(s,a.f)}`:""}.</p>
+    ${u.f!==fecha.value && s.frecuencia==="diaria"?`<p class="muted">Sin nueva observación en el corte elegido. Se conserva el último dato disponible.</p>`:""}
     <div class="card"><strong>${s.es_rango ? "Últimos cambios de rango" : "Últimas " + tramo.length + " observaciones"}</strong>
       ${grafico(trazo,e.cls)}
-      <div class="ends"><small>${corta(tramo[0].f)}</small><small>${corta(trazo.at(-1).f)}</small></div>
+      <div class="ends"><small>${etiqueta(s,tramo[0].f)}</small><small>${etiqueta(s,trazo.at(-1).f)}</small></div>
     </div>
     <details class="card"><summary>Ver valores por fecha</summary><table>
       <tr><th>Observación</th><th>Valor</th></tr>
-      ${tramo.slice(-15).reverse().map(x=>`<tr><td>${corta(x.f)}</td><td>${valor(s,x)}</td></tr>`).join("")}
+      ${tramo.slice(-15).reverse().map(x=>`<tr><td>${etiqueta(s,x.f)}</td><td>${valor(s,x)}</td></tr>`).join("")}
     </table></details>
     ${(datos.cambios?.[s.id] || []).map(c=>`<div class="card alert"><small class="tag">CAMBIO METODOLÓGICO · ${c.fecha}</small><p>${c.descripcion}</p></div>`).join("")}
     <p class="muted">${f.cita || ""}${est ? ` · última descarga correcta: ${momento(est.ultima_descarga_correcta)}` : ""}</p>
@@ -223,6 +227,12 @@ function noticias() {
     items.push({fecha:u.f, id:s.id, titulo:`${s.nombre} ${verbo}: ${valor(s,u)}`,
       texto:`Cierre del ${corta(u.f)} frente a ${valor(s,a)} el ${corta(a.f)} (${e.texto}).`});
   }
+  const ia = series.find(s=>s.id==="ia"), im = series.find(s=>s.id==="im");
+  if (ia && im) {
+    const pa = puntos(ia), pm = puntos(im), u = pa.at(-1), a = pa.at(-2), m = pm.at(-1);
+    if (u && a && m) items.push({fecha:u.f, id:"ia", titulo:`Inflación anual de ${etiqueta(ia,u.f)}: ${valor(ia,u)}`,
+      texto:`Inflación mensual: ${valor(im,m)}. El mes anterior la anual fue ${valor(ia,a)} (${estado(ia,pa).texto}).`});
+  }
   if (fed) {
     const p = puntos(fed), u = p.at(-1), a = p.at(-2);
     if (u && a) items.push({fecha:u.f, id:"fed", titulo:`Último cambio de la Reserva Federal: ${valor(fed,u)}`,
@@ -236,8 +246,9 @@ function regulacion() {
   return `<div class="card alert"><small class="tag">EN CONSTRUCCIÓN</small>
     <p>El radar regulatorio (Junta de Política y Regulación Financiera y Monetaria, SEPS y Superintendencia de Bancos) se activará en una próxima etapa.</p></div>`;
 }
+const ORDEN_ECUADOR = ["pais","im","ia","iac","empleo","piba","pibt"];
 function ecuador() {
-  return series.filter(s=>s.grupo==="Ecuador").map(fila).join("") + `<div class="card alert"><small class="tag">PRÓXIMA ETAPA</small>
+  return series.filter(s=>s.grupo==="Ecuador").sort((a,b)=>ORDEN_ECUADOR.indexOf(a.id)-ORDEN_ECUADOR.indexOf(b.id)).map(fila).join("") + `<div class="card alert"><small class="tag">PRÓXIMA ETAPA</small>
     <p>En preparación:</p><ul>${PENDIENTES_ECUADOR.map(x=>`<li>${x}</li>`).join("")}</ul></div>`;
 }
 function dibujar() {
