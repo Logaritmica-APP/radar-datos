@@ -268,16 +268,11 @@ function normasAlCorte() {
 function tarjetaNorma(n) {
   const ref = n.fecha || n.publicado;
   const dias = (Date.parse(fecha.value) - Date.parse(ref)) / 864e5;  /* nueva: expedida en los últimos 30 días */
-  const etiquetas = [n.tipo, ...(n.temas || [])].filter(Boolean);
-  return `<details class="card alert"><summary>
-      <small class="tag">${dias <= 30 ? "NUEVA · " : ""}${n.emisor} · ${corta(ref)}</small>
-      <h3>${oracion(n.titulo)}</h3>
-      <small>${etiquetas.join(" · ")}</small></summary>
-    ${n.resumen ? `<p><b>Qué regula:</b> ${n.resumen}</p>` : ""}
-    ${n.ambito ? `<p><b>A quién aplica:</b> ${n.ambito}</p>` : ""}
-    <p class="muted">Resolución ${n.id}${n.fecha ? ` · expedida el ${corta(n.fecha)}` : ""}${n.publicado ? ` · publicada en el sitio el ${corta(n.publicado)}` : ""}</p>
+  return `<div class="card alert">
+    <small class="tag">${dias <= 30 ? "NUEVA · " : ""}${n.emisor} · ${corta(ref)}</small>
+    <h3>${oracion(n.titulo)}</h3>
     <a href="${n.url}" target="_blank" rel="noopener">Ver resolución oficial ↗</a>
-  </details>`;
+  </div>`;
 }
 function regulacion(limite) {
   const todas = normasAlCorte();
@@ -287,7 +282,7 @@ function regulacion(limite) {
   return (visibles.map(tarjetaNorma).join("") || `<p class="muted">Sin normas registradas hasta esta fecha.</p>`) +
     (!limite && erratas.length ? `<details class="card"><summary><b>Correcciones (fe de erratas): ${erratas.length}</b></summary>${erratas.map(tarjetaNorma).join("")}</details>` : "") +
     (limite && lista.length > limite ? `<button class="more" data-tab="Regulación">Ver las ${lista.length} normas →</button>` : "") +
-    (limite ? "" : `<p class="muted">Textos tomados de la resolución oficial; no constituyen asesoría legal. En preparación: ${EMISORES_PENDIENTES.join(" y ")}.</p>`);
+    (limite ? "" : `<p class="muted">Títulos tomados de la resolución oficial. En preparación: ${EMISORES_PENDIENTES.join(" y ")}.</p>`);
 }
 const ORDEN_ECUADOR = ["pais","im","ia","iac","empleo","piba","pibt"];
 function ecuador() {
