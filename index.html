@@ -81,7 +81,7 @@ const fecha = $("#fecha"), vista = $("#vista"), menu = $("#menu"), estadoEl = $(
 const tabs = ["Inicio","Indicadores","Regulación","Noticias"];
 const DESTACADOS = ["pais","ia","brent","wti","t10","fed","eurusd","btc","eth"];
 const PENDIENTES_ECUADOR = ["Desempleo nacional (INEC)","PIB real (BCE)"];
-let tab = "Inicio", detalle = null, datos = null, series = [], fuentes = {};
+let tab = "Inicio", detalle = null, datos = null, series = [], fuentes = {}, hoy = null;
 
 async function cargar() {
   let origen;
@@ -115,13 +115,17 @@ function preparar() {
   fuentes = Object.fromEntries(datos.fuentes.map(f => [f.id, f]));
   series = datos.indicadores.filter(i => datos.observaciones[i.id]).map(i => {
     const obs = datos.observaciones[i.id];
-    return {...i, fechas: obs.map(o => o[0]), valores: obs.map(o => o[1]), superiores: obs.map(o => o[2])};
+    return {...i, fechas: obs.map(o => o[0]), valores: obs.map(o => o[1]), superiores: obs.map(o => o[2] ?? undefined),
+            publicados: obs.map(o => o[3] || o[0]), estimadas: obs.map(o => o[4] === 1)};
   });
   const diarias = new Set();
   series.filter(s => s.frecuencia === "diaria").forEach(s => s.fechas.slice(-30).forEach(f => diarias.add(f)));
+  /* El corte más reciente es hoy (fecha de generación de los datos), para incluir lo publicado después del último cierre de mercado. */
+  hoy = new Date(datos.generado).toLocaleDateString("en-CA", {timeZone:"America/Guayaquil"});
+  diarias.add(hoy);
   const fechas = [...diarias].sort().reverse().slice(0, 15);
   fecha.innerHTML = "";
-  fechas.forEach(f => fecha.add(new Option(fechaLarga(f), f)));
+  fechas.forEach(f => fecha.add(new Option((f === hoy ? "Hoy, " : "") + fechaLarga(f), f)));
   fecha.value = fechas[0];
   dibujar();
 }
@@ -144,7 +148,9 @@ function num(v,d) {
 }
 function puntos(s) {
   const p = [];
-  for (let i = 0; i < s.fechas.length; i++) if (s.fechas[i] <= fecha.value) p.push({f:s.fechas[i], v:s.valores[i], sup:s.superiores[i]});
+  /* Solo datos ya publicados al corte elegido. */
+  for (let i = 0; i < s.fechas.length; i++)
+    if (s.publicados[i] <= fecha.value) p.push({f:s.fechas[i], v:s.valores[i], sup:s.superiores[i], pub:s.publicados[i], est:s.estimadas[i]});
   return p;
 }
 function estado(s,p) {
@@ -204,7 +210,8 @@ function ficha(s) {
     <div class="big ${e.cls}">${valor(s,u)}</div>
     <b class="${e.cls}">${e.texto}</b>
     <p>Dato ${s.frecuencia==="mensual"?"de":"del"} <b>${etiqueta(s,u.f)}</b>${a?`; comparación con ${s.frecuencia==="mensual"?"":"el "}${etiqueta(s,a.f)}`:""}.</p>
-    ${u.f!==fecha.value && s.frecuencia==="diaria"?`<p class="muted">Sin nueva observación en el corte elegido. Se conserva el último dato disponible.</p>`:""}
+    ${u.pub!==u.f ? `<p class="muted">Publicado el ${corta(u.pub)}${u.est ? " (fecha estimada)" : ""}.</p>` : ""}
+    ${u.f!==fecha.value && fecha.value!==hoy && s.frecuencia==="diaria"?`<p class="muted">Sin nueva observación en el corte elegido. Se conserva el último dato disponible.</p>`:""}
     <div class="card"><strong>${s.es_rango ? "Últimos cambios de rango" : "Últimas " + tramo.length + " observaciones"}</strong>
       ${grafico(trazo,e.cls)}
       <div class="ends"><small>${etiqueta(s,tramo[0].f)}</small><small>${etiqueta(s,trazo.at(-1).f)}</small></div>
