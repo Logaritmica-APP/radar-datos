@@ -250,9 +250,44 @@ function noticias() {
   return items.map(x=>`<details class="card"><summary><small>${corta(x.fecha)} · MERCADOS · GENERADA CON LOS DATOS</small><h3>${x.titulo}</h3></summary>
     <p>${x.texto}</p><button class="more" data-id="${x.id}">Ver evolución →</button></details>`).join("");
 }
-function regulacion() {
-  return `<div class="card alert"><small class="tag">EN CONSTRUCCIÓN</small>
-    <p>El radar regulatorio (Junta de Política y Regulación Financiera y Monetaria, SEPS y Superintendencia de Bancos) se activará en una próxima etapa.</p></div>`;
+/* Radar regulatorio: normas generales detectadas por el recolector (título, objeto y ámbito tomados del texto oficial). */
+const EMISORES_PENDIENTES = ["Junta de Política y Regulación Financiera y Monetaria", "Superintendencia de Bancos"];
+function oracion(t) {
+  if (!t) return "";
+  const x = t.replace(/\s+/g, " ").replace(/“|”/g, "").trim();
+  const letras = x.replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g, "");
+  const mayus = letras.replace(/[^A-ZÁÉÍÓÚÑ]/g, "").length / Math.max(letras.length, 1);
+  if (mayus < 0.85) return x;
+  /* Pasa a minúsculas salvo los códigos de resolución (SEPS-..., JPRFM-...) */
+  return x.split(" ").map((w, i) => /^[A-Z]{2,}-[A-Z0-9-]+$/.test(w) ? w : (i === 0 ? w.charAt(0) + w.slice(1).toLowerCase() : w.toLowerCase())).join(" ");
+}
+function normasAlCorte() {
+  return (datos.normas || []).filter(n => (n.publicado || n.fecha || "") <= fecha.value)
+    .sort((a, b) => (b.fecha || b.publicado).localeCompare(a.fecha || a.publicado));
+}
+function tarjetaNorma(n) {
+  const ref = n.fecha || n.publicado;
+  const dias = (Date.parse(fecha.value) - Date.parse(ref)) / 864e5;  /* nueva: expedida en los últimos 30 días */
+  const etiquetas = [n.tipo, ...(n.temas || [])].filter(Boolean);
+  return `<details class="card alert"><summary>
+      <small class="tag">${dias <= 30 ? "NUEVA · " : ""}${n.emisor} · ${corta(ref)}</small>
+      <h3>${oracion(n.titulo)}</h3>
+      <small>${etiquetas.join(" · ")}</small></summary>
+    ${n.resumen ? `<p><b>Qué regula:</b> ${n.resumen}</p>` : ""}
+    ${n.ambito ? `<p><b>A quién aplica:</b> ${n.ambito}</p>` : ""}
+    <p class="muted">Resolución ${n.id}${n.fecha ? ` · expedida el ${corta(n.fecha)}` : ""}${n.publicado ? ` · publicada en el sitio el ${corta(n.publicado)}` : ""}</p>
+    <a href="${n.url}" target="_blank" rel="noopener">Ver resolución oficial ↗</a>
+  </details>`;
+}
+function regulacion(limite) {
+  const todas = normasAlCorte();
+  const lista = todas.filter(n => n.tipo !== "Fe de erratas");
+  const erratas = todas.filter(n => n.tipo === "Fe de erratas");
+  const visibles = limite ? lista.slice(0, limite) : lista;
+  return (visibles.map(tarjetaNorma).join("") || `<p class="muted">Sin normas registradas hasta esta fecha.</p>`) +
+    (!limite && erratas.length ? `<details class="card"><summary><b>Correcciones (fe de erratas): ${erratas.length}</b></summary>${erratas.map(tarjetaNorma).join("")}</details>` : "") +
+    (limite && lista.length > limite ? `<button class="more" data-tab="Regulación">Ver las ${lista.length} normas →</button>` : "") +
+    (limite ? "" : `<p class="muted">Textos tomados de la resolución oficial; no constituyen asesoría legal. En preparación: ${EMISORES_PENDIENTES.join(" y ")}.</p>`);
 }
 const ORDEN_ECUADOR = ["pais","im","ia","iac","empleo","piba","pibt"];
 function ecuador() {
@@ -269,13 +304,14 @@ function dibujar() {
       <small>Color y flecha: última variación observada.</small>
       ${DESTACADOS.map(id=>series.find(s=>s.id===id)).filter(Boolean).map(fila).join("")}
       <button class="more" data-tab="Indicadores">Ver todos los indicadores →</button>
+      <h2>Radar regulatorio</h2>${regulacion(3)}
       <h2>Noticias</h2>${noticias()}`;
   } else if (tab==="Indicadores") {
     const ORDEN = ["Mercados","Criptoactivos"];
     const grupos = [...new Set(series.map(s=>s.grupo))].filter(g=>g!=="Ecuador").sort((a,b)=>(ORDEN.indexOf(a)+99)%99-(ORDEN.indexOf(b)+99)%99);
     vista.innerHTML=`<h2>Ecuador</h2>${ecuador()}` + grupos.map(g=>`<h2>${g}</h2>${series.filter(s=>s.grupo===g).map(fila).join("")}`).join("");
   } else if (tab==="Regulación") {
-    vista.innerHTML=`<h2>Radar regulatorio semanal</h2>${regulacion()}`;
+    vista.innerHTML=`<h2>Radar regulatorio</h2><small>Normas generales para cooperativas, mutualistas y bancos.</small>${regulacion()}`;
   } else {
     vista.innerHTML=`<h2>Noticias</h2>${noticias()}`;
   }
