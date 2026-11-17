@@ -79,8 +79,8 @@ const COPIA_INCLUIDA = /*COPIA*/null/*FIN_COPIA*/;
 const $ = s => document.querySelector(s);
 const fecha = $("#fecha"), vista = $("#vista"), menu = $("#menu"), estadoEl = $("#estado");
 const tabs = ["Inicio","Indicadores","Regulación","Noticias"];
-const DESTACADOS = ["pais","ia","brent","wti","t10","fed","eurusd","btc","eth"];
-const PENDIENTES_ECUADOR = ["Desempleo nacional (INEC)","PIB real (BCE)"];
+const DESTACADOS = ["pais","ia","piba","empleo","brent","wti","t10","fed","eurusd","btc","eth"];
+const PENDIENTES_ECUADOR = [];
 let tab = "Inicio", detalle = null, datos = null, series = [], fuentes = {}, hoy = null;
 
 async function cargar() {
@@ -140,6 +140,7 @@ function corta(iso) {
   return new Date(iso+"T12:00:00Z").toLocaleDateString("es-EC",{day:"numeric",month:"short",year:"2-digit",timeZone:"UTC"});
 }
 function etiqueta(s,iso) {
+  if (s.frecuencia === "trimestral") { const m = +iso.slice(5,7); return ["I","II","III","IV"][Math.floor((m-1)/3)] + " trim " + iso.slice(0,4); }
   if (s.frecuencia === "mensual") return new Date(iso+"T12:00:00Z").toLocaleDateString("es-EC",{month:"short",year:"numeric",timeZone:"UTC"});
   return corta(iso);
 }
@@ -209,7 +210,7 @@ function ficha(s) {
     <h2>${s.nombre}</h2>
     <div class="big ${e.cls}">${valor(s,u)}</div>
     <b class="${e.cls}">${e.texto}</b>
-    <p>Dato ${s.frecuencia==="mensual"?"de":"del"} <b>${etiqueta(s,u.f)}</b>${a?`; comparación con ${s.frecuencia==="mensual"?"":"el "}${etiqueta(s,a.f)}`:""}.</p>
+    <p>Dato ${s.frecuencia==="diaria"?"del":"de"} <b>${etiqueta(s,u.f)}</b>${a?`; comparación con ${s.frecuencia==="diaria"?"el ":""}${etiqueta(s,a.f)}`:""}.</p>
     ${u.pub!==u.f ? `<p class="muted">Publicado el ${corta(u.pub)}${u.est ? " (fecha estimada)" : ""}.</p>` : ""}
     ${u.f!==fecha.value && fecha.value!==hoy && s.frecuencia==="diaria"?`<p class="muted">Sin nueva observación en el corte elegido. Se conserva el último dato disponible.</p>`:""}
     <div class="card"><strong>${s.es_rango ? "Últimos cambios de rango" : "Últimas " + tramo.length + " observaciones"}</strong>
@@ -255,8 +256,9 @@ function regulacion() {
 }
 const ORDEN_ECUADOR = ["pais","im","ia","iac","empleo","piba","pibt"];
 function ecuador() {
-  return series.filter(s=>s.grupo==="Ecuador").sort((a,b)=>ORDEN_ECUADOR.indexOf(a.id)-ORDEN_ECUADOR.indexOf(b.id)).map(fila).join("") + `<div class="card alert"><small class="tag">PRÓXIMA ETAPA</small>
-    <p>En preparación:</p><ul>${PENDIENTES_ECUADOR.map(x=>`<li>${x}</li>`).join("")}</ul></div>`;
+  return series.filter(s=>s.grupo==="Ecuador").sort((a,b)=>ORDEN_ECUADOR.indexOf(a.id)-ORDEN_ECUADOR.indexOf(b.id)).map(fila).join("") +
+    (PENDIENTES_ECUADOR.length ? `<div class="card alert"><small class="tag">PRÓXIMA ETAPA</small>
+    <p>En preparación:</p><ul>${PENDIENTES_ECUADOR.map(x=>`<li>${x}</li>`).join("")}</ul></div>` : "");
 }
 function dibujar() {
   menu.innerHTML=tabs.map(t=>`<button type="button" data-tab="${t}" ${tab===t?'aria-current="page"':""}>${t}</button>`).join("");
