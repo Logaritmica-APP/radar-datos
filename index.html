@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101519">
+<title>Radar Financiero Ecuador</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg:#0b1013; --panel:#161e23; --line:#2c393f;
+  --text:#eef3f4; --muted:#abbac0; --up:#65eba4;
+  --down:#ff8089; --flat:#b7c2c6; --amber:#ffcb70;
+}
+* {box-sizing:border-box}
+body {margin:0; background:var(--bg); color:var(--text); font:16px/1.45 system-ui,sans-serif}
+main {max-width:550px; margin:auto; padding:20px 16px 100px}
+header {border-bottom:1px solid var(--line); padding-bottom:16px}
+h1 {font-size:clamp(23px,6vw,30px); margin:3px 0 12px}
+h2 {font-size:20px; margin:20px 0 8px}
+h3 {font-size:17px; margin:6px 0}
+small,.muted {color:var(--muted)}
+small {font-size:12px}
+label {display:block; font-size:13px; color:var(--muted)}
+button,select {font:inherit; color:inherit}
+button {cursor:pointer}
+select,.back,.more {border:1px solid var(--line); background:var(--panel); border-radius:9px; padding:10px 12px; min-height:44px}
+select {width:100%; margin-top:5px}
+.back,.more {margin-top:12px}
+.row {display:grid; grid-template-columns:minmax(0,1fr) 48px auto; align-items:center; gap:8px; width:100%; min-height:66px;
+  text-align:left; background:transparent; border:0; border-bottom:1px solid var(--line); padding:9px 0}
+.row:hover,.row:focus-visible {background:var(--panel)}
+.row small,.row strong {display:block}
+.quote {text-align:right; font-variant-numeric:tabular-nums}
+.quote small {color:inherit}
+.up {color:var(--up)} .down {color:var(--down)} .flat {color:var(--flat)}
+.card {background:var(--panel); padding:14px; margin:10px 0; border:1px solid var(--line); border-radius:12px}
+.alert {border-left:3px solid var(--amber)}
+.tag {color:var(--amber); font-size:12px; font-weight:700}
+.big {font-size:36px; font-weight:750; font-variant-numeric:tabular-nums}
+.spark {width:48px; height:26px}
+.chart {width:100%; height:auto; display:block}
+.ends {display:flex; justify-content:space-between; gap:8px}
+.estado {display:flex; gap:8px; align-items:center; margin:10px 0 0; font-size:13px; color:var(--muted)}
+.punto {width:9px; height:9px; border-radius:50%; background:var(--flat); flex:none}
+.punto.ok {background:var(--up)} .punto.aviso {background:var(--amber)}
+nav {position:fixed; bottom:0; left:0; right:0; max-width:550px; margin:auto; background:#121a1f; display:flex;
+  border-top:1px solid var(--line); padding:4px 4px max(5px,env(safe-area-inset-bottom))}
+nav button {flex:1; min-height:48px; padding:5px 2px; font-size:13px; background:none; border:0; border-bottom:2px solid transparent}
+nav button[aria-current="page"] {color:#8ee7ca; border-color:#8ee7ca}
+summary {cursor:pointer; padding:3px 0}
+table {width:100%; border-collapse:collapse; margin-top:8px}
+td,th {padding:6px 0; text-align:left; border-bottom:1px solid var(--line)}
+td:last-child,th:last-child {text-align:right}
+a {color:#91dcca}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <small>ECUADOR · PROTOTIPO CON DATOS REALES</small>
+    <h1>Radar Financiero Ecuador</h1>
+    <label for="fecha">Consultar al cierre de</label>
+    <select id="fecha"></select>
+    <div class="estado" id="estado"><span class="punto"></span><span>Cargando datos…</span></div>
+  </header>
+  <div id="vista"></div>
+</main>
+<nav id="menu" aria-label="Navegación principal"></nav>
+
+<script>
+"use strict";
+
+/* Datos: 1) en línea desde radar-datos; 2) última copia guardada en el equipo; 3) copia incluida en este archivo. */
+const URL_DATOS = "https://raw.githubusercontent.com/Logaritmica-APP/radar-datos/main/radar.json";
+const CLAVE_LOCAL = "radar.json";
+const COPIA_INCLUIDA = /*COPIA*/null/*FIN_COPIA*/;
+
+const $ = s => document.querySelector(s);
+const fecha = $("#fecha"), vista = $("#vista"), menu = $("#menu"), estadoEl = $("#estado");
+const tabs = ["Inicio","Indicadores","Regulación","Noticias"];
+const DESTACADOS = ["brent","wti","t10","fed","eurusd","t5","t30"];
+const PENDIENTES_ECUADOR = ["Riesgo país (BCE)","Inflación mensual, anual y acumulada (INEC)","Desempleo nacional (INEC)","PIB real (BCE)"];
+let tab = "Inicio", detalle = null, datos = null, series = [], fuentes = {};
+
+async function cargar() {
+  let origen;
+  try {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 8000);
+    const r = await fetch(URL_DATOS + "?t=" + Date.now(), {signal: ctl.signal, cache: "no-store"});
+    clearTimeout(t);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    datos = await r.json();
+    try { localStorage.setItem(CLAVE_LOCAL, JSON.stringify(datos)); } catch (e) {}
+    origen = {cls:"ok", texto:"En línea · datos generados el " + momento(datos.generado)};
+  } catch (e) {
+    let guardado = null;
+    try { guardado = JSON.parse(localStorage.getItem(CLAVE_LOCAL) || "null"); } catch (e2) {}
+    if (guardado) {
+      datos = guardado;
+      origen = {cls:"aviso", texto:"No se pudo consultar en línea · datos guardados el " + momento(datos.generado)};
+    } else if (COPIA_INCLUIDA) {
+      datos = COPIA_INCLUIDA;
+      origen = {cls:"aviso", texto:"No se pudo consultar en línea · copia incluida del " + momento(datos.generado)};
+    } else {
+      estadoEl.innerHTML = `<span class="punto"></span><span>No hay datos disponibles. Revise la conexión.</span>`;
+      return;
+    }
+  }
+  estadoEl.innerHTML = `<span class="punto ${origen.cls}"></span><span>${origen.texto}</span>`;
+  preparar();
+}
+
+function preparar() {
+  fuentes = Object.fromEntries(datos.fuentes.map(f => [f.id, f]));
+  series = datos.indicadores.filter(i => datos.observaciones[i.id]).map(i => {
+    const obs = datos.observaciones[i.id];
+    return {...i, fechas: obs.map(o => o[0]), valores: obs.map(o => o[1]), superiores: obs.map(o => o[2])};
+  });
+  const diarias = new Set();
+  series.filter(s => s.frecuencia === "diaria").forEach(s => s.fechas.slice(-30).forEach(f => diarias.add(f)));
+  const fechas = [...diarias].sort().reverse().slice(0, 15);
+  fecha.innerHTML = "";
+  fechas.forEach(f => fecha.add(new Option(fechaLarga(f), f)));
+  fecha.value = fechas[0];
+  dibujar();
+}
+
+function momento(iso) {
+  return new Date(iso).toLocaleString("es-EC", {day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"America/Guayaquil"});
+}
+function fechaLarga(iso) {
+  return new Date(iso+"T12:00:00Z").toLocaleDateString("es-EC",{weekday:"long",day:"numeric",month:"long",year:"numeric",timeZone:"UTC"});
+}
+function corta(iso) {
+  return new Date(iso+"T12:00:00Z").toLocaleDateString("es-EC",{day:"numeric",month:"short",year:"2-digit",timeZone:"UTC"});
+}
+function num(v,d) {
+  return new Intl.NumberFormat("es-EC",{minimumFractionDigits:d,maximumFractionDigits:d}).format(v);
+}
+function puntos(s) {
+  const p = [];
+  for (let i = 0; i < s.fechas.length; i++) if (s.fechas[i] <= fecha.value) p.push({f:s.fechas[i], v:s.valores[i], sup:s.superiores[i]});
+  return p;
+}
+function estado(s,p) {
+  const ult=p.at(-1), ant=p.at(-2);
+  if (!ult || !ant) return {cls:"flat",texto:"Sin comparación"};
+  const a = s.es_rango ? ult.sup : ult.v, b = s.es_rango ? ant.sup : ant.v;
+  let delta = a - b, unidad = s.unidad_variacion, dec = s.decimales;
+  if (unidad === "pb") { delta *= 100; dec = 0; }
+  delta = Number(delta.toFixed(dec));
+  return {cls:delta>0?"up":delta<0?"down":"flat",
+          texto:(delta>0?"↑ +":delta<0?"↓ −":"= ")+num(Math.abs(delta),dec)+" "+unidad};
+}
+function valor(s,o) {
+  return s.es_rango ? num(o.v,2)+"–"+num(o.sup,2)+" %" : num(o.v,s.decimales)+" "+s.unidad;
+}
+function grafico(p,cls,mini=false) {
+  if (!p.length) return "";
+  const w=mini?60:320, h=mini?28:138, margen=mini?3:9;
+  const xs=p.map(a=>Date.parse(a.f+"T12:00:00Z")), ys=p.map(a=>a.sup ?? a.v);
+  const xmin=xs[0], xmax=xs.at(-1), ymin=Math.min(...ys), ymax=Math.max(...ys);
+  const xy=p.map((_,i)=>{
+    const x=xmax===xmin?w/2:margen+(xs[i]-xmin)/(xmax-xmin)*(w-2*margen);
+    const y=ymax===ymin?h/2:h-margen-(ys[i]-ymin)/(ymax-ymin)*(h-2*margen);
+    return [x.toFixed(1),y.toFixed(1)];
+  });
+  const circulos = p.length <= 40 ? xy.filter((_,i)=>!p[i].paso).map(a=>`<circle cx="${a[0]}" cy="${a[1]}" r="${mini?1.2:3}" fill="currentColor"/>`).join("") : "";
+  return `<svg class="${mini?"spark":"chart"} ${cls}" viewBox="0 0 ${w} ${h}" ${mini?'aria-hidden="true"':'role="img" aria-label="Evolución hasta la fecha seleccionada"'}>
+     ${mini?"":`<path d="M0 ${h/2} H${w}" stroke="#344349" stroke-width="1"/>`}
+     <polyline points="${xy.map(a=>a.join(",")).join(" ")}" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-linecap="round" stroke-width="${mini?1.8:2.2}"/>
+     ${circulos}</svg>`;
+}
+function escalones(p) {
+  /* Un rango se mantiene hasta la siguiente decisión: se dibuja en escalones hasta la fecha consultada. */
+  const out = [];
+  p.forEach((x,i) => { if (i) out.push({f:x.f, v:p[i-1].v, sup:p[i-1].sup, paso:true}); out.push(x); });
+  if (p.length && fecha.value > p.at(-1).f) out.push({...p.at(-1), f:fecha.value, paso:true});
+  return out;
+}
+function fila(s) {
+  const p=puntos(s), u=p.at(-1), e=estado(s,p);
+  if (!u) return "";
+  return `<button type="button" class="row" data-id="${s.id}">
+    <span><strong>${s.nombre}</strong><small>${corta(u.f)} · ${fuentes[s.fuente_id]?.cita.replace("Fuente: ","") || ""}</small></span>
+    ${grafico(s.es_rango ? escalones(p.slice(-6)) : p.slice(-20),e.cls,true)}
+    <span class="quote ${e.cls}"><strong>${valor(s,u)}</strong><small>${e.texto} ›</small></span>
+  </button>`;
+}
+function ficha(s) {
+  const p=puntos(s), u=p.at(-1), a=p.at(-2), e=estado(s,p), f=fuentes[s.fuente_id] || {};
+  if (!u) return `<button class="back" data-back>‹ Volver</button><p>Sin observaciones para esta fecha.</p>`;
+  const tramo = s.es_rango ? p.slice(-12) : p.slice(-60);
+  const trazo = s.es_rango ? escalones(tramo) : tramo;
+  const est = datos.estado?.[s.fuente_id];
+  return `<button type="button" class="back" data-back>‹ Volver</button>
+    <h2>${s.nombre}</h2>
+    <div class="big ${e.cls}">${valor(s,u)}</div>
+    <b class="${e.cls}">${e.texto}</b>
+    <p>Dato del <b>${corta(u.f)}</b>${a?`; comparación con el ${corta(a.f)}`:""}.</p>
+    ${u.f!==fecha.value?`<p class="muted">Sin nueva observación en el corte elegido. Se conserva el último dato disponible.</p>`:""}
+    <div class="card"><strong>${s.es_rango ? "Últimos cambios de rango" : "Últimas " + tramo.length + " observaciones"}</strong>
+      ${grafico(trazo,e.cls)}
+      <div class="ends"><small>${corta(tramo[0].f)}</small><small>${corta(trazo.at(-1).f)}</small></div>
+    </div>
+    <details class="card"><summary>Ver valores por fecha</summary><table>
+      <tr><th>Observación</th><th>Valor</th></tr>
+      ${tramo.slice(-15).reverse().map(x=>`<tr><td>${corta(x.f)}</td><td>${valor(s,x)}</td></tr>`).join("")}
+    </table></details>
+    <p class="muted">${f.cita || ""}${est ? ` · última descarga correcta: ${momento(est.ultima_descarga_correcta)}` : ""}</p>
+    ${f.url ? `<a href="${f.url}" target="_blank" rel="noopener">Ir a la fuente oficial ↗</a>` : ""}`;
+}
+function noticias() {
+  const items = [];
+  const t10 = series.find(s=>s.id==="t10"), brent = series.find(s=>s.id==="brent"), fed = series.find(s=>s.id==="fed");
+  for (const s of [t10, brent]) {
+    if (!s) continue;
+    const p = puntos(s), u = p.at(-1), a = p.at(-2); if (!u || !a) continue;
+    const e = estado(s,p), verbo = e.cls==="up" ? "sube" : e.cls==="down" ? "baja" : "se mantiene";
+    items.push({fecha:u.f, id:s.id, titulo:`${s.nombre} ${verbo}: ${valor(s,u)}`,
+      texto:`Cierre del ${corta(u.f)} frente a ${valor(s,a)} el ${corta(a.f)} (${e.texto}).`});
+  }
+  if (fed) {
+    const p = puntos(fed), u = p.at(-1), a = p.at(-2);
+    if (u && a) items.push({fecha:u.f, id:"fed", titulo:`Último cambio de la Reserva Federal: ${valor(fed,u)}`,
+      texto:`Vigente desde el ${corta(u.f)}. Rango anterior: ${valor(fed,a)}.`});
+  }
+  items.sort((x,y)=>y.fecha.localeCompare(x.fecha));
+  return items.map(x=>`<details class="card"><summary><small>${corta(x.fecha)} · MERCADOS · GENERADA CON LOS DATOS</small><h3>${x.titulo}</h3></summary>
+    <p>${x.texto}</p><button class="more" data-id="${x.id}">Ver evolución →</button></details>`).join("");
+}
+function regulacion() {
+  return `<div class="card alert"><small class="tag">EN CONSTRUCCIÓN</small>
+    <p>El radar regulatorio (Junta de Política y Regulación Financiera y Monetaria, SEPS y Superintendencia de Bancos) se activará en una próxima etapa.</p></div>`;
+}
+function ecuador() {
+  return `<div class="card alert"><small class="tag">PRÓXIMA ETAPA</small>
+    <p>Indicadores de Ecuador en preparación:</p><ul>${PENDIENTES_ECUADOR.map(x=>`<li>${x}</li>`).join("")}</ul></div>`;
+}
+function dibujar() {
+  menu.innerHTML=tabs.map(t=>`<button type="button" data-tab="${t}" ${tab===t?'aria-current="page"':""}>${t}</button>`).join("");
+  if (!datos) return;
+  if (detalle) { vista.innerHTML=ficha(series.find(s=>s.id===detalle)); return; }
+  if (tab==="Inicio") {
+    vista.innerHTML=`<h2>Indicadores al cierre</h2>
+      <small>Color y flecha: última variación observada.</small>
+      ${DESTACADOS.map(id=>series.find(s=>s.id===id)).filter(Boolean).map(fila).join("")}
+      <button class="more" data-tab="Indicadores">Ver todos los indicadores →</button>
+      <h2>Ecuador</h2>${ecuador()}
+      <h2>Noticias</h2>${noticias()}`;
+  } else if (tab==="Indicadores") {
+    vista.innerHTML=`<h2>Ecuador</h2>${ecuador()}<h2>Mercados</h2>${series.filter(s=>s.grupo==="Mercados").map(fila).join("")}`;
+  } else if (tab==="Regulación") {
+    vista.innerHTML=`<h2>Radar regulatorio semanal</h2>${regulacion()}`;
+  } else {
+    vista.innerHTML=`<h2>Noticias</h2>${noticias()}`;
+  }
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.id) detalle=b.dataset.id;
+  else if (b.dataset.tab) {tab=b.dataset.tab; detalle=null;}
+  else if (b.hasAttribute("data-back")) detalle=null;
+  else return;
+  dibujar(); window.scrollTo(0,0);
+});
+fecha.addEventListener("change",dibujar);
+dibujar();
+cargar();
+</script>
+</body>
+</html>
