@@ -271,6 +271,7 @@ function tarjetaNorma(n) {
   return `<div class="card alert">
     <small class="tag">${dias <= 30 ? "NUEVA · " : ""}${n.emisor} · ${corta(ref)}</small>
     <h3>${oracion(n.titulo)}</h3>
+    <small>${n.id}</small><br>
     <a href="${n.url}" target="_blank" rel="noopener">Ver resolución oficial ↗</a>
   </div>`;
 }
