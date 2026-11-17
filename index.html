@@ -79,7 +79,7 @@ const COPIA_INCLUIDA = /*COPIA*/null/*FIN_COPIA*/;
 const $ = s => document.querySelector(s);
 const fecha = $("#fecha"), vista = $("#vista"), menu = $("#menu"), estadoEl = $("#estado");
 const tabs = ["Inicio","Indicadores","Regulación","Noticias"];
-const DESTACADOS = ["brent","wti","t10","fed","eurusd","t5","t30"];
+const DESTACADOS = ["brent","wti","t10","fed","eurusd","btc","eth"];
 const PENDIENTES_ECUADOR = ["Riesgo país (BCE)","Inflación mensual, anual y acumulada (INEC)","Desempleo nacional (INEC)","PIB real (BCE)"];
 let tab = "Inicio", detalle = null, datos = null, series = [], fuentes = {};
 
@@ -149,6 +149,7 @@ function estado(s,p) {
   const a = s.es_rango ? ult.sup : ult.v, b = s.es_rango ? ant.sup : ant.v;
   let delta = a - b, unidad = s.unidad_variacion, dec = s.decimales;
   if (unidad === "pb") { delta *= 100; dec = 0; }
+  else if (unidad === "%" && s.unidad !== "%") { delta = (a / b - 1) * 100; dec = 2; }
   delta = Number(delta.toFixed(dec));
   return {cls:delta>0?"up":delta<0?"down":"flat",
           texto:(delta>0?"↑ +":delta<0?"↓ −":"= ")+num(Math.abs(delta),dec)+" "+unidad};
@@ -183,7 +184,7 @@ function fila(s) {
   const p=puntos(s), u=p.at(-1), e=estado(s,p);
   if (!u) return "";
   return `<button type="button" class="row" data-id="${s.id}">
-    <span><strong>${s.nombre}</strong><small>${corta(u.f)} · ${fuentes[s.fuente_id]?.cita.replace("Fuente: ","") || ""}</small></span>
+    <span><strong>${s.nombre}</strong><small>${corta(u.f)} · ${(fuentes[s.fuente_id]?.cita || "").replace("Fuente: ","").split(" · ")[0]}${s.fuente_id==="coingecko" ? " · prueba" : ""}</small></span>
     ${grafico(s.es_rango ? escalones(p.slice(-6)) : p.slice(-20),e.cls,true)}
     <span class="quote ${e.cls}"><strong>${valor(s,u)}</strong><small>${e.texto} ›</small></span>
   </button>`;
@@ -250,7 +251,9 @@ function dibujar() {
       <h2>Ecuador</h2>${ecuador()}
       <h2>Noticias</h2>${noticias()}`;
   } else if (tab==="Indicadores") {
-    vista.innerHTML=`<h2>Ecuador</h2>${ecuador()}<h2>Mercados</h2>${series.filter(s=>s.grupo==="Mercados").map(fila).join("")}`;
+    const ORDEN = ["Mercados","Criptoactivos"];
+    const grupos = [...new Set(series.map(s=>s.grupo))].sort((a,b)=>(ORDEN.indexOf(a)+99)%99-(ORDEN.indexOf(b)+99)%99);
+    vista.innerHTML=`<h2>Ecuador</h2>${ecuador()}` + grupos.map(g=>`<h2>${g}</h2>${series.filter(s=>s.grupo===g).map(fila).join("")}`).join("");
   } else if (tab==="Regulación") {
     vista.innerHTML=`<h2>Radar regulatorio semanal</h2>${regulacion()}`;
   } else {
