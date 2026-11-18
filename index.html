@@ -39,6 +39,8 @@ select {width:100%; margin-top:5px}
 .up {color:var(--up)} .down {color:var(--down)} .flat {color:var(--flat)}
 .card {background:var(--panel); padding:14px; margin:10px 0; border:1px solid var(--line); border-radius:12px}
 .alert {border-left:3px solid var(--amber)}
+.atajos {margin:18px 0 8px}
+.atajos .chips {margin-top:6px}
 .rango {display:grid; grid-template-columns:1fr 1fr; gap:10px}
 .rango label {display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted, #9aa)}
 .rango input {min-height:44px; background:transparent; color:inherit; border:1px solid var(--line); border-radius:9px; padding:0 8px; color-scheme:dark}
@@ -63,7 +65,7 @@ select {width:100%; margin-top:5px}
 .punto.ok {background:var(--up)} .punto.aviso {background:var(--amber)}
 nav {position:fixed; bottom:0; left:0; right:0; max-width:550px; margin:auto; background:#121a1f; display:flex;
   border-top:1px solid var(--line); padding:4px 4px max(5px,var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))}
-nav button {flex:1; min-height:48px; padding:5px 2px; font-size:13px; background:none; border:0; border-bottom:2px solid transparent}
+nav button {flex:1 1 auto; min-width:0; min-height:48px; padding:5px 3px; font-size:12px; white-space:nowrap; background:none; border:0; border-bottom:2px solid transparent}
 nav button[aria-current="page"] {color:#8ee7ca; border-color:#8ee7ca}
 summary {cursor:pointer; padding:3px 0}
 table {width:100%; border-collapse:collapse; margin-top:8px}
@@ -95,7 +97,7 @@ const COPIA_INCLUIDA = /*COPIA*/null/*FIN_COPIA*/;
 
 const $ = s => document.querySelector(s);
 const fecha = $("#fecha"), vista = $("#vista"), menu = $("#menu"), estadoEl = $("#estado");
-const tabs = ["Inicio","Indicadores","Regulación","Noticias"];
+const tabs = ["Inicio","Indicadores","Regulación","Noticias","Configuración"];
 const DESTACADOS = ["pais","ia","piba","empleo","brent","wti","t10","fed","eurusd","btc","eth"];
 const PENDIENTES_ECUADOR = [];
 let tab = "Inicio", detalle = null, datos = null, series = [], fuentes = {}, hoy = null;
@@ -307,13 +309,17 @@ function rangoActual() {
   return {desde, hasta};
 }
 function selectorRango() {
-  const {desde, hasta} = rangoActual(), anio = hasta.slice(0, 4) + "-01-01";
-  const rapido = (txt, d) => `<button type="button" class="chip ${desde===d?"activo":""}" data-desde="${d}">${txt}</button>`;
+  const {desde, hasta} = rangoActual();
   return `<div class="card rango">
     <label>Desde<input type="date" id="desde" value="${desde}" max="${hasta}"></label>
     <label>Hasta<input type="date" id="hasta" value="${hasta}" max="${fecha.value}"></label>
-    <div class="chips">${rapido("7 días", restar(hasta, 7))}${rapido("30 días", restar(hasta, 30))}${rapido("Este año", anio)}</div>
   </div>`;
+}
+function atajosRango() {
+  const {desde, hasta} = rangoActual(), anio = hasta.slice(0, 4) + "-01-01";
+  const rapido = (txt, d) => `<button type="button" class="chip ${desde===d?"activo":""}" data-desde="${d}">${txt}</button>`;
+  return `<div class="atajos"><small>Ver otro período:</small>
+    <div class="chips">${rapido("7 días", restar(hasta, 7))}${rapido("30 días", restar(hasta, 30))}${rapido("Este año", anio)}</div></div>`;
 }
 function oracion(t) {
   if (!t) return "";
@@ -359,7 +365,7 @@ function ecuador() {
 }
 /* Indicadores elegidos para Inicio: se guardan en el teléfono; la primera vez, los destacados. */
 const CLAVE_INICIO = "radar_inicio";
-let elegidos = null, personalizar = false;
+let elegidos = null;
 try { elegidos = JSON.parse(localStorage.getItem(CLAVE_INICIO) || "null"); } catch (e) {}
 if (!Array.isArray(elegidos)) elegidos = [...DESTACADOS];
 function guardarElegidos() { try { localStorage.setItem(CLAVE_INICIO, JSON.stringify(elegidos)); } catch (e) {} }
@@ -371,7 +377,7 @@ function eleccion() {
   const grupos = [...new Set(ordenados([...series]).map(s=>s.grupo))];
   const nombre = id => series.find(s=>s.id===id)?.nombre || id;
   const lista = elegidos.filter(id=>series.some(s=>s.id===id));
-  return `<button type="button" class="back" data-listo>‹ Listo</button>
+  return `<h2>Configuración</h2><small>Los cambios se guardan en este teléfono.</small>
     <h2>Orden en Inicio</h2><small>Usa las flechas para cambiar el orden.</small>
     <div class="card">${lista.map((id,i)=>`<div class="orden"><span>${i+1}. ${nombre(id)}</span>
       <span><button type="button" class="flecha" data-subir="${id}" ${i?"":"disabled"} aria-label="Subir ${nombre(id)}">↑</button>
@@ -381,35 +387,48 @@ function eleccion() {
     ${grupos.map(g=>`<h2>${g}</h2><div class="card">${ordenados(series.filter(s=>s.grupo===g)).map(s=>`
       <label class="check"><input type="checkbox" data-sel="${s.id}" ${elegidos.includes(s.id)?"checked":""}> ${s.nombre}</label>`).join("")}</div>`).join("")}`;
 }
+/* Normas ya revisadas: al abrir Regulación, las nuevas dejan de contar en el aviso de Inicio. */
+const CLAVE_VISTAS = "radar_normas_vistas";
+let vistas = [];
+try { vistas = JSON.parse(localStorage.getItem(CLAVE_VISTAS) || "[]"); } catch (e) {}
+function normasNuevas() {
+  const dias = f => (Date.parse(fecha.value) - Date.parse(f)) / 864e5;
+  return normasAlCorte().filter(x => dias(x.publicado || x.fecha) <= 7 && dias(x.fecha || x.publicado) <= 30);
+}
+function marcarVistas() {
+  const nuevas = normasNuevas().map(n => n.id).filter(id => !vistas.includes(id));
+  if (!nuevas.length) return;
+  vistas = [...vistas, ...nuevas].slice(-500);
+  try { localStorage.setItem(CLAVE_VISTAS, JSON.stringify(vistas)); } catch (e) {}
+}
 function avisoNormas() {
   /* Una sola línea en Inicio: normas publicadas en los últimos 7 días al corte y expedidas en los últimos 30
      (así no cuenta como nueva una norma antigua que el emisor subió tarde a su sitio). */
-  const dias = f => (Date.parse(fecha.value) - Date.parse(f)) / 864e5;
-  const n = normasAlCorte().filter(x => dias(x.publicado || x.fecha) <= 7 && dias(x.fecha || x.publicado) <= 30).length;
+  const n = normasNuevas().filter(x => !vistas.includes(x.id)).length;
   return n ? `<button type="button" class="more aviso" data-tab="Regulación">📄 ${n} ${n===1?"norma nueva":"normas nuevas"} esta semana →</button>` : "";
 }
-const BOTON_ELEGIR = `<button type="button" class="more" data-personalizar>Elegir indicadores de Inicio ✎</button>`;
 function dibujar() {
   menu.innerHTML=tabs.map(t=>`<button type="button" data-tab="${t}" ${tab===t?'aria-current="page"':""}>${t}</button>`).join("");
   if (!datos) return;
-  if (personalizar) { vista.innerHTML=eleccion(); return; }
   if (detalle) { vista.innerHTML=ficha(series.find(s=>s.id===detalle)); return; }
   if (tab==="Inicio") {
     vista.innerHTML=`<h2>Indicadores al cierre</h2>
       <small>Color y flecha: última variación observada.</small>
       ${avisoNormas()}
       ${elegidos.map(id=>series.find(s=>s.id===id)).filter(Boolean).map(fila).join("") ||
-        `<p class="muted">No elegiste indicadores para Inicio.</p>`}
-      ${BOTON_ELEGIR}
+        `<p class="muted">No elegiste indicadores para Inicio.</p><button class="more" data-tab="Configuración">Elegirlos en Configuración →</button>`}
       <button class="more" data-tab="Indicadores">Ver todos los indicadores →</button>`;
   } else if (tab==="Indicadores") {
     const ORDEN = ["Mercados","Criptoactivos"];
     const grupos = [...new Set(series.map(s=>s.grupo))].filter(g=>g!=="Ecuador").sort((a,b)=>(ORDEN.indexOf(a)+99)%99-(ORDEN.indexOf(b)+99)%99);
-    vista.innerHTML=BOTON_ELEGIR + `<h2>Ecuador</h2>${ecuador()}` + grupos.map(g=>`<h2>${g}</h2>${series.filter(s=>s.grupo===g).map(fila).join("")}`).join("");
+    vista.innerHTML=`<h2>Ecuador</h2>${ecuador()}` + grupos.map(g=>`<h2>${g}</h2>${series.filter(s=>s.grupo===g).map(fila).join("")}`).join("");
   } else if (tab==="Regulación") {
-    vista.innerHTML=`<h2>Radar regulatorio</h2><small>Normas generales para cooperativas, mutualistas y bancos.</small>${selectorRango()}<div id="normas">${regulacion()}</div>`;
+    vista.innerHTML=`<h2>Radar regulatorio</h2><small>Normas generales para cooperativas, mutualistas y bancos.</small>${selectorRango()}<div id="normas">${regulacion()}</div>${atajosRango()}`;
+    marcarVistas();
+  } else if (tab==="Configuración") {
+    vista.innerHTML=eleccion();
   } else {
-    vista.innerHTML=`<h2>Noticias</h2>${selectorRango()}${noticias()}`;
+    vista.innerHTML=`<h2>Noticias</h2>${selectorRango()}${noticias()}${atajosRango()}`;
   }
 }
 document.addEventListener("click",e=>{
@@ -421,10 +440,8 @@ document.addEventListener("click",e=>{
     if (i<0 || j<0 || j>=elegidos.length) return;
     [elegidos[i],elegidos[j]]=[elegidos[j],elegidos[i]]; guardarElegidos();
   }
-  else if (b.hasAttribute("data-personalizar")) personalizar=true;
-  else if (b.hasAttribute("data-listo")) personalizar=false;
   else if (b.dataset.id) detalle=b.dataset.id;
-  else if (b.dataset.tab) {tab=b.dataset.tab; detalle=null; personalizar=false;}
+  else if (b.dataset.tab) {tab=b.dataset.tab; detalle=null;}
   else if (b.hasAttribute("data-back")) detalle=null;
   else return;
   dibujar(); window.scrollTo(0,0);
@@ -443,8 +460,7 @@ fecha.addEventListener("change",dibujar);
 /* App Android: el botón "atrás" del teléfono cierra la ficha o vuelve a Inicio antes de salir. */
 const AppNativo = window.Capacitor?.Plugins?.App;
 if (AppNativo) AppNativo.addListener("backButton", () => {
-  if (personalizar) personalizar = false;
-  else if (detalle) detalle = null;
+  if (detalle) detalle = null;
   else if (tab !== "Inicio") tab = "Inicio";
   else { AppNativo.exitApp(); return; }
   dibujar(); window.scrollTo(0, 0);
