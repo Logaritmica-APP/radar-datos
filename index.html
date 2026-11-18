@@ -239,30 +239,60 @@ function ficha(s) {
     <p class="muted">${f.cita || ""}${est ? ` · última descarga correcta: ${momento(est.ultima_descarga_correcta)}` : ""}</p>
     ${f.url ? `<a href="${f.url}" target="_blank" rel="noopener">Ir a la fuente oficial ↗</a>` : ""}`;
 }
+/* Noticias con historia, calculadas con los datos (sin redacción manual):
+   1) publicación de un dato de Ecuador (inflación, desempleo, PIB) en su fecha de publicación;
+   2) cambio de rango de la Reserva Federal;
+   3) movimiento diario inusual: variación mayor a 3 desviaciones estándar de las 250 variaciones previas. */
+/* Petróleo: solo WTI (referencia del crudo ecuatoriano); Brent se mueve casi igual y duplicaría avisos. */
+const DIARIAS_NOTICIA = ["pais","wti","t10","eurusd","btc","eth"], UMBRAL_SIGMA = 3;
+const cacheMov = {};
+function movimientos(s) {
+  const p = puntos(s), clave = s.id + fecha.value;
+  if (cacheMov[clave]) return cacheMov[clave];
+  const pct = s.unidad_variacion === "%" && s.unidad !== "%";
+  const d = p.map((x,i) => i ? (pct ? (x.v / p[i-1].v - 1) * 100 : x.v - p[i-1].v) : null);
+  const out = [];
+  for (let i = 61; i < p.length; i++) {
+    const prev = d.slice(Math.max(1, i - 250), i), m = prev.reduce((a,b)=>a+b,0) / prev.length;
+    const sd = Math.sqrt(prev.reduce((a,b)=>a+(b-m)**2,0) / (prev.length - 1));
+    if (sd > 0 && Math.abs(d[i] - m) >= UMBRAL_SIGMA * sd) out.push({i, p, z:(d[i]-m)/sd});
+  }
+  return cacheMov[clave] = out;
+}
 function noticias() {
-  const items = [];
-  const t10 = series.find(s=>s.id==="t10"), brent = series.find(s=>s.id==="brent"), fed = series.find(s=>s.id==="fed");
-  for (const s of [t10, brent]) {
-    if (!s) continue;
-    const p = puntos(s), u = p.at(-1), a = p.at(-2); if (!u || !a) continue;
-    const e = estado(s,p), verbo = e.cls==="up" ? "sube" : e.cls==="down" ? "baja" : "se mantiene";
-    items.push({fecha:u.f, id:s.id, titulo:`${s.nombre} ${verbo}: ${valor(s,u)}`,
-      texto:`Cierre del ${corta(u.f)} frente a ${valor(s,a)} el ${corta(a.f)} (${e.texto}).`});
+  const {desde, hasta} = rangoActual(), dentro = f => f >= desde && f <= hasta, items = [];
+  const S = id => series.find(s=>s.id===id);
+  const pub = (s, comp, titulo, extra) => {
+    if (!s) return;
+    const p = puntos(s);
+    p.forEach((u,i) => {
+      if (!i || !dentro(u.pub)) return;
+      const e = estado(s,[p[i-1],u]), c = comp ? puntos(comp).find(x=>x.f===u.f) : null;
+      items.push({fecha:u.pub, id:s.id, tag:"ECUADOR · DATO PUBLICADO", titulo:`${titulo} de ${etiqueta(s,u.f)}: ${valor(s,u)}`,
+        texto:`${c ? extra + ": " + valor(comp,c) + ". " : ""}Período anterior: ${valor(s,p[i-1])} (${e.texto}).${u.est ? " Fecha de publicación estimada." : ""}`});
+    });
+  };
+  pub(S("ia"), S("im"), "Inflación anual", "Inflación mensual");
+  pub(S("empleo"), null, "Desempleo", "");
+  pub(S("piba"), S("pibt"), "PIB real interanual", "Variación trimestral");
+  const fed = S("fed");
+  if (fed) { const p = puntos(fed); p.forEach((u,i) => { if (i && dentro(u.f)) items.push({fecha:u.f, id:"fed",
+    tag:"MERCADOS · RESERVA FEDERAL", titulo:`La Reserva Federal ${u.sup > p[i-1].sup ? "sube" : "baja"} su rango a ${valor(fed,u)}`,
+    texto:`Rango anterior: ${valor(fed,p[i-1])}.`}); }); }
+  for (const id of DIARIAS_NOTICIA) {
+    const s = S(id); if (!s) continue;
+    for (const m of movimientos(s)) {
+      const u = m.p[m.i], a = m.p[m.i-1]; if (!dentro(u.f)) continue;
+      const e = estado(s,[a,u]);
+      items.push({fecha:u.f, id, tag:`${s.grupo.toUpperCase()} · MOVIMIENTO INUSUAL`, titulo:`${s.nombre} ${e.cls==="up"?"sube":"baja"} con fuerza: ${valor(s,u)}`,
+        texto:`Variación del día: ${e.texto} (${num(Math.abs(m.z),1)} veces su desviación típica diaria del último año). Cierre anterior: ${valor(s,a)} el ${corta(a.f)}.`});
+    }
   }
-  const ia = series.find(s=>s.id==="ia"), im = series.find(s=>s.id==="im");
-  if (ia && im) {
-    const pa = puntos(ia), pm = puntos(im), u = pa.at(-1), a = pa.at(-2), m = pm.at(-1);
-    if (u && a && m) items.push({fecha:u.f, id:"ia", titulo:`Inflación anual de ${etiqueta(ia,u.f)}: ${valor(ia,u)}`,
-      texto:`Inflación mensual: ${valor(im,m)}. El mes anterior la anual fue ${valor(ia,a)} (${estado(ia,pa).texto}).`});
-  }
-  if (fed) {
-    const p = puntos(fed), u = p.at(-1), a = p.at(-2);
-    if (u && a) items.push({fecha:u.f, id:"fed", titulo:`Último cambio de la Reserva Federal: ${valor(fed,u)}`,
-      texto:`Vigente desde el ${corta(u.f)}. Rango anterior: ${valor(fed,a)}.`});
-  }
-  items.sort((x,y)=>y.fecha.localeCompare(x.fecha));
-  return items.map(x=>`<details class="card"><summary><small>${corta(x.fecha)} · MERCADOS · GENERADA CON LOS DATOS</small><h3>${x.titulo}</h3></summary>
-    <p>${x.texto}</p><button class="more" data-id="${x.id}">Ver evolución →</button></details>`).join("");
+  items.sort((x,y)=>y.fecha.localeCompare(x.fecha) || x.id.localeCompare(y.id));
+  return `<small>${items.length} ${items.length===1?"noticia":"noticias"} entre el ${corta(desde)} y el ${corta(hasta)}.</small>` +
+    (items.map(x=>`<details class="card"><summary><small>${corta(x.fecha)} · ${x.tag}</small><h3>${x.titulo}</h3></summary>
+    <p>${x.texto}</p><button class="more" data-id="${x.id}">Ver evolución →</button></details>`).join("") || `<p class="muted">Sin noticias en este período.</p>`) +
+    `<p class="muted">Generadas automáticamente con los datos. Movimiento inusual: variación diaria mayor a ${num(UMBRAL_SIGMA,1)} desviaciones estándar de las 250 anteriores.</p>`;
 }
 /* Radar regulatorio: normas generales detectadas por el recolector (título, objeto y ámbito tomados del texto oficial). */
 /* Rango de fechas de la pestaña Regulación (por fecha de expedición). Por defecto: últimos 30 días al corte. */
@@ -376,7 +406,7 @@ function dibujar() {
   } else if (tab==="Regulación") {
     vista.innerHTML=`<h2>Radar regulatorio</h2><small>Normas generales para cooperativas, mutualistas y bancos.</small>${selectorRango()}<div id="normas">${regulacion()}</div>`;
   } else {
-    vista.innerHTML=`<h2>Noticias</h2>${noticias()}`;
+    vista.innerHTML=`<h2>Noticias</h2>${selectorRango()}${noticias()}`;
   }
 }
 document.addEventListener("click",e=>{
