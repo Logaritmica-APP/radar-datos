@@ -19,6 +19,9 @@ main {max-width:550px; margin:auto; padding:20px 16px 100px;
   padding-top:calc(20px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
   padding-bottom:calc(100px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))}
 header {border-bottom:1px solid var(--line); padding-bottom:16px}
+.titulo {display:flex; justify-content:space-between; align-items:flex-start; gap:8px}
+.engrane {min-width:44px; min-height:44px; font-size:24px; background:none; border:1px solid var(--line); border-radius:12px; color:inherit; margin-top:14px}
+.engrane[aria-current="page"] {color:#8ee7ca; border-color:#8ee7ca}
 h1 {font-size:clamp(23px,6vw,30px); margin:3px 0 12px}
 h2 {font-size:20px; margin:20px 0 8px}
 h3 {font-size:17px; margin:6px 0}
@@ -78,7 +81,8 @@ a {color:#91dcca}
 <main>
   <header>
     <small>ECUADOR · PROTOTIPO CON DATOS REALES</small>
-    <h1>Radar Financiero Ecuador</h1>
+    <div class="titulo"><h1>Radar Financiero Ecuador</h1>
+      <button type="button" class="engrane" data-tab="Configuración" aria-label="Configuración">⚙</button></div>
     <label for="fecha">Consultar al cierre de</label>
     <select id="fecha"></select>
     <div class="estado" id="estado"><span class="punto"></span><span>Cargando datos…</span></div>
@@ -97,7 +101,7 @@ const COPIA_INCLUIDA = /*COPIA*/null/*FIN_COPIA*/;
 
 const $ = s => document.querySelector(s);
 const fecha = $("#fecha"), vista = $("#vista"), menu = $("#menu"), estadoEl = $("#estado");
-const tabs = ["Inicio","Indicadores","Regulación","Noticias","Configuración"];
+const tabs = ["Inicio","Indicadores","Alertas","Noticias","Regulación"];
 const DESTACADOS = ["pais","ia","piba","empleo","brent","wti","t10","fed","eurusd","btc","eth"];
 const PENDIENTES_ECUADOR = [];
 let tab = "Inicio", detalle = null, datos = null, series = [], fuentes = {}, hoy = null;
@@ -264,7 +268,7 @@ function movimientos(s) {
   }
   return cacheMov[clave] = out;
 }
-function noticias() {
+function alertas() {
   const {desde, hasta} = rangoActual(), dentro = f => f >= desde && f <= hasta, items = [];
   const S = id => series.find(s=>s.id===id);
   const pub = (s, comp, titulo, extra) => {
@@ -294,12 +298,35 @@ function noticias() {
     }
   }
   items.sort((x,y)=>y.fecha.localeCompare(x.fecha) || x.id.localeCompare(y.id));
-  return `<small>${items.length} ${items.length===1?"noticia":"noticias"} entre el ${corta(desde)} y el ${corta(hasta)}.</small>` +
+  return `<small>${items.length} ${items.length===1?"alerta":"alertas"} entre el ${corta(desde)} y el ${corta(hasta)}.</small>` +
     (items.map(x=>`<details class="card"><summary><small>${corta(x.fecha)} · ${x.tag}</small><h3>${x.titulo}</h3></summary>
-    <p>${x.texto}</p><button class="more" data-id="${x.id}">Ver evolución →</button></details>`).join("") || `<p class="muted">Sin noticias en este período.</p>`) +
-    `<p class="muted">Generadas automáticamente con los datos. Movimiento inusual: variación diaria mayor a ${num(UMBRAL_SIGMA,1)} desviaciones estándar de las 250 anteriores.</p>`;
+    <p>${x.texto}</p><button class="more" data-id="${x.id}">Ver evolución →</button></details>`).join("") || `<p class="muted">Sin alertas en este período.</p>`) +
+    `<p class="muted">Calculadas por la app con los indicadores (sin inteligencia artificial). Movimiento inusual: variación diaria mayor a ${num(UMBRAL_SIGMA,1)} desviaciones estándar de las 250 anteriores.</p>`;
 }
 /* Radar regulatorio: normas generales detectadas por el recolector (título, objeto y ámbito tomados del texto oficial). */
+/* Noticias: comunicados de fuentes oficiales (título, fecha y enlace al original). Fuentes elegidas en Configuración. */
+const CLAVE_FUENTES = "radar_fuentes_apagadas";
+let apagadas = [];
+try { apagadas = JSON.parse(localStorage.getItem(CLAVE_FUENTES) || "[]"); } catch (e) {}
+function guardarFuentes() { try { localStorage.setItem(CLAVE_FUENTES, JSON.stringify(apagadas)); } catch (e) {} }
+function fuentesNoticias() { return datos?.comunicados?.fuentes || {}; }
+function noticias() {
+  const {desde, hasta} = rangoActual(), F = fuentesNoticias();
+  const lista = (datos?.comunicados?.lista || []).filter(([f, fecha]) => !apagadas.includes(f) && fecha >= desde && fecha <= hasta);
+  if (!datos?.comunicados) return `<p class="muted">Las noticias oficiales aún no están en los datos descargados.</p>`;
+  return `<small>${lista.length} ${lista.length===1?"noticia":"noticias"} entre el ${corta(desde)} y el ${corta(hasta)}.</small>` +
+    (lista.map(([f, fecha, titulo, url]) => `<div class="card"><small class="tag">${corta(fecha)} · ${F[f]?.nombre || f}</small>
+      <h3>${titulo}</h3><a href="${url}" target="_blank" rel="noopener">Leer en el sitio oficial ↗</a></div>`).join("")
+      || `<p class="muted">Sin noticias en este período${apagadas.length ? " para las fuentes elegidas" : ""}.</p>`) +
+    `<p class="muted">Comunicados publicados por cada institución en su sitio. Fuentes: Configuración ⚙.</p>`;
+}
+function eleccionFuentes() {
+  const F = fuentesNoticias(), grupos = [...new Set(Object.values(F).map(x => x.grupo))];
+  if (!grupos.length) return "";
+  return `<h2>Fuentes de noticias</h2><small>Marca las instituciones cuyas noticias quieres ver.</small>` +
+    grupos.map(g => `<h2>${g}</h2><div class="card">${Object.entries(F).filter(([, x]) => x.grupo === g).map(([id, x]) => `
+      <label class="check"><input type="checkbox" data-fuente="${id}" ${apagadas.includes(id) ? "" : "checked"}> ${x.nombre}</label>`).join("")}</div>`).join("");
+}
 /* Rango de fechas de la pestaña Regulación (por fecha de expedición). Por defecto: últimos 30 días al corte. */
 let rango = null;
 function restar(f, dias) { const d = new Date(f + "T12:00:00"); d.setDate(d.getDate() - dias); return d.toISOString().slice(0, 10); }
@@ -409,6 +436,7 @@ function avisoNormas() {
 }
 function dibujar() {
   menu.innerHTML=tabs.map(t=>`<button type="button" data-tab="${t}" ${tab===t?'aria-current="page"':""}>${t}</button>`).join("");
+  document.querySelector(".engrane")?.toggleAttribute("aria-current", tab==="Configuración");
   if (!datos) return;
   if (detalle) { vista.innerHTML=ficha(series.find(s=>s.id===detalle)); return; }
   if (tab==="Inicio") {
@@ -426,9 +454,11 @@ function dibujar() {
     vista.innerHTML=`<h2>Radar regulatorio</h2><small>Normas generales para cooperativas, mutualistas y bancos.</small>${selectorRango()}<div id="normas">${regulacion()}</div>${atajosRango()}`;
     marcarVistas();
   } else if (tab==="Configuración") {
-    vista.innerHTML=eleccion();
+    vista.innerHTML=eleccion() + eleccionFuentes();
+  } else if (tab==="Alertas") {
+    vista.innerHTML=`<h2>Alertas</h2><small>Datos publicados, decisiones de la Fed y movimientos inusuales.</small>${selectorRango()}${alertas()}${atajosRango()}`;
   } else {
-    vista.innerHTML=`<h2>Noticias</h2>${selectorRango()}${noticias()}${atajosRango()}`;
+    vista.innerHTML=`<h2>Noticias</h2><small>Comunicados de fuentes oficiales.</small>${selectorRango()}${noticias()}${atajosRango()}`;
   }
 }
 document.addEventListener("click",e=>{
@@ -450,6 +480,11 @@ document.addEventListener("change",e=>{
   if (e.target.id==="desde" || e.target.id==="hasta") {
     if (e.target.value) { rango = {...rangoActual(), [e.target.id]: e.target.value}; dibujar(); }
     return;
+  }
+  if (e.target.dataset?.fuente) {
+    const f = e.target.dataset.fuente;
+    apagadas = e.target.checked ? apagadas.filter(x => x !== f) : [...new Set([...apagadas, f])];
+    guardarFuentes(); return;
   }
   const id=e.target.dataset?.sel;
   if (!id) return;
