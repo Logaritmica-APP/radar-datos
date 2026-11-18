@@ -59,6 +59,11 @@ select {width:100%; margin-top:5px}
 .check {display:flex; align-items:center; gap:10px; min-height:44px; border-bottom:1px solid var(--line)}
 .check:last-child {border-bottom:0}
 .check input {width:20px; height:20px}
+.tasas {width:100%; border-collapse:collapse; margin:8px 0; font-size:14px}
+.tasas th {text-align:right; font-weight:600; color:var(--flat); padding:6px 4px; border-bottom:1px solid var(--line)}
+.tasas th:first-child, .tasas td:first-child {text-align:left}
+.tasas td {text-align:right; padding:9px 4px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums}
+.tasas tr[data-id] {cursor:pointer}
 .tag {color:var(--amber); font-size:12px; font-weight:700}
 .big {font-size:36px; font-weight:750; font-variant-numeric:tabular-nums}
 .spark {width:48px; height:26px}
@@ -103,7 +108,7 @@ const COPIA_INCLUIDA = /*COPIA*/null/*FIN_COPIA*/;
 const $ = s => document.querySelector(s);
 const fecha = $("#fecha"), vista = $("#vista"), menu = $("#menu"), estadoEl = $("#estado");
 const tabs = ["Inicio","Indicadores","Alertas","Noticias","Regulación"];
-const DESTACADOS = ["pais","ia","piba","empleo","brent","wti","oro","plata","t10","fed","eurusd","btc","eth"];
+const DESTACADOS = ["pais","reservas","ia","piba","empleo","tpr","tar","brent","wti","oro","plata","t10","fed","eurusd","btc","eth"];
 const PENDIENTES_ECUADOR = [];
 let tab = "Inicio", detalle = null, datos = null, series = [], fuentes = {}, hoy = null;
 
@@ -385,7 +390,25 @@ function regulacion(limite) {
     (limite && lista.length > limite ? `<button class="more" data-tab="Regulación">Ver las ${lista.length} normas →</button>` : "") +
     (limite ? "" : `<p class="muted">Títulos tomados de la resolución oficial. Emisores: SEPS, Junta de Política y Regulación Financiera y Monetaria y Superintendencia de Bancos.</p>`);
 }
-const ORDEN_ECUADOR = ["pais","im","ia","iac","empleo","piba","pibt"];
+const ORDEN_ECUADOR = ["pais","reservas","im","ia","iac","empleo","piba","pibt"];
+/* Tasas por segmento: no van como filas sueltas; se muestran en una tabla (máxima frente a referencial). */
+const GRUPO_TABLA = "Tasas por segmento";
+function tablaTasas() {
+  const ORDEN_SEG = ["corporativo","empresarial","pymes","consumo","educativo","educativo_social","vip","vis","inmobiliario",
+    "micro_minorista","micro_simple","micro_ampliada","inversion_publica"];
+  const filas = series.filter(s => s.id.startsWith("tmax_"))
+    .sort((a, b) => ORDEN_SEG.indexOf(a.id.slice(5)) - ORDEN_SEG.indexOf(b.id.slice(5))).map(m => {
+    const r = series.find(s => s.id === "tref_" + m.id.slice(5));
+    const pm = puntos(m).at(-1), pr = r ? puntos(r).at(-1) : null;
+    return pm ? {m, r, pm, pr, nombre: m.nombre.replace(/^Máxima – /, "")} : null;
+  }).filter(Boolean);
+  if (!filas.length) return "";
+  const mes = etiqueta(filas[0].m, filas[0].pm.f);
+  return `<div class="card"><small>Vigentes en ${mes} · % efectivo anual</small>
+    <table class="tasas"><thead><tr><th>Segmento</th><th>Máxima</th><th>Referencial</th></tr></thead><tbody>
+    ${filas.map(x => `<tr data-id="${x.m.id}"><td>${x.nombre}</td><td>${num(x.pm.v,2)}</td><td>${x.pr ? num(x.pr.v,2) : "–"}</td></tr>`).join("")}
+    </tbody></table><small>Máxima: fijada por la Junta. Referencial: promedio ponderado del mercado (BCE). Toca un segmento para ver su evolución.</small></div>`;
+}
 function ecuador() {
   return series.filter(s=>s.grupo==="Ecuador").sort((a,b)=>ORDEN_ECUADOR.indexOf(a.id)-ORDEN_ECUADOR.indexOf(b.id)).map(fila).join("") +
     (PENDIENTES_ECUADOR.length ? `<div class="card alert"><small class="tag">PRÓXIMA ETAPA</small>
@@ -398,11 +421,11 @@ try { elegidos = JSON.parse(localStorage.getItem(CLAVE_INICIO) || "null"); } cat
 if (!Array.isArray(elegidos)) elegidos = [...DESTACADOS];
 function guardarElegidos() { try { localStorage.setItem(CLAVE_INICIO, JSON.stringify(elegidos)); } catch (e) {} }
 function ordenados(lista) {
-  const grupo = s => s.grupo==="Ecuador" ? 0 : s.grupo==="Mercados" ? 1 : 2;
+  const grupo = s => ({"Ecuador":0, "Tasas":1, "Mercados":2})[s.grupo] ?? 3;
   return lista.sort((a,b)=>grupo(a)-grupo(b) || (a.grupo==="Ecuador" ? ORDEN_ECUADOR.indexOf(a.id)-ORDEN_ECUADOR.indexOf(b.id) : 0));
 }
 function eleccion() {
-  const grupos = [...new Set(ordenados([...series]).map(s=>s.grupo))];
+  const grupos = [...new Set(ordenados([...series]).map(s=>s.grupo))].filter(g => g !== GRUPO_TABLA);
   const nombre = id => series.find(s=>s.id===id)?.nombre || id;
   const lista = elegidos.filter(id=>series.some(s=>s.id===id));
   return `<h2>Configuración</h2><small>Los cambios se guardan en este teléfono.</small>
@@ -448,9 +471,9 @@ function dibujar() {
         `<p class="muted">No elegiste indicadores para Inicio.</p><button class="more" data-tab="Configuración">Elegirlos en Configuración →</button>`}
       <button class="more" data-tab="Indicadores">Ver todos los indicadores →</button>`;
   } else if (tab==="Indicadores") {
-    const ORDEN = ["Mercados","Criptoactivos"];
-    const grupos = [...new Set(series.map(s=>s.grupo))].filter(g=>g!=="Ecuador").sort((a,b)=>(ORDEN.indexOf(a)+99)%99-(ORDEN.indexOf(b)+99)%99);
-    vista.innerHTML=`<h2>Ecuador</h2>${ecuador()}` + grupos.map(g=>`<h2>${g}</h2>${series.filter(s=>s.grupo===g).map(fila).join("")}`).join("");
+    const ORDEN = ["Tasas","Mercados","Criptoactivos"];
+    const grupos = [...new Set(series.map(s=>s.grupo))].filter(g=>g!=="Ecuador" && g!==GRUPO_TABLA).sort((a,b)=>(ORDEN.indexOf(a)+99)%99-(ORDEN.indexOf(b)+99)%99);
+    vista.innerHTML=`<h2>Ecuador</h2>${ecuador()}` + grupos.map(g=>`<h2>${g==="Tasas"?"Tasas de interés":g}</h2>${series.filter(s=>s.grupo===g).map(fila).join("")}${g==="Tasas"?tablaTasas():""}`).join("");
   } else if (tab==="Regulación") {
     vista.innerHTML=`<h2>Radar regulatorio</h2><small>Normas generales para cooperativas, mutualistas y bancos.</small><div id="normas">${regulacion()}</div>${selectorRango()}${atajosRango()}`;
     marcarVistas();
@@ -463,7 +486,7 @@ function dibujar() {
   }
 }
 document.addEventListener("click",e=>{
-  const b=e.target.closest("button");
+  const b=e.target.closest("button, tr[data-id]");
   if (!b) return;
   if (b.dataset.desde) { rango = {...rangoActual(), desde: b.dataset.desde}; dibujar(); return; }
   if (b.dataset.subir || b.dataset.bajar) {
