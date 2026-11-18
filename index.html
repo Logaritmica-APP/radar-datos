@@ -224,11 +224,16 @@ function escalones(p) {
   if (p.length && fecha.value > p.at(-1).f) out.push({...p.at(-1), f:fecha.value, paso:true});
   return out;
 }
+/* Precio del momento (aún no es cierre): se marca como parcial con la hora de la consulta. */
+function parcial(s, u) {
+  const p = datos?.provisionales?.[s.id];
+  return p && u && p.fecha === u.f ? p : null;
+}
 function fila(s) {
   const p=puntos(s), u=p.at(-1), e=estado(s,p);
   if (!u) return "";
   return `<button type="button" class="row" data-id="${s.id}">
-    <span><strong>${s.nombre}</strong><small>${etiqueta(s,u.f)} · ${(fuentes[s.fuente_id]?.cita || "").replace("Fuente: ","").split(" · ")[0]}${s.fuente_id==="coingecko" ? " · prueba" : ""}</small></span>
+    <span><strong>${s.nombre}</strong><small>${etiqueta(s,u.f)}${parcial(s,u) ? `, ${parcial(s,u).hora} (parcial)` : ""} · ${(fuentes[s.fuente_id]?.cita || "").replace("Fuente: ","").split(" · ")[0]}${s.fuente_id==="coingecko" ? " · prueba" : ""}</small></span>
     ${grafico(s.es_rango ? escalones(p.slice(-6)) : p.slice(-20),e.cls,true)}
     <span class="quote ${e.cls}"><strong>${valor(s,u)}</strong><small>${e.texto} ›</small></span>
   </button>`;
@@ -243,6 +248,7 @@ function ficha(s) {
     <h2>${s.nombre}</h2>
     <div class="big ${e.cls}">${valor(s,u)}</div>
     <b class="${e.cls}">${e.texto}</b>
+    ${parcial(s,u) ? `<p class="muted">Precio parcial consultado a las ${parcial(s,u).hora}; se reemplaza por el cierre del día (19:00).</p>` : ""}
     <p>Dato ${s.frecuencia==="diaria"?"del":"de"} <b>${etiqueta(s,u.f)}</b>${a?`; comparación con ${s.frecuencia==="diaria"?"el ":""}${etiqueta(s,a.f)}`:""}.</p>
     ${u.pub!==u.f ? `<p class="muted">Publicado el ${corta(u.pub)}${u.est ? " (fecha estimada)" : ""}.</p>` : ""}
     ${u.f!==fecha.value && fecha.value!==hoy && s.frecuencia==="diaria"?`<p class="muted">Sin nueva observación en el corte elegido. Se conserva el último dato disponible.</p>`:""}
@@ -266,7 +272,8 @@ function ficha(s) {
 const DIARIAS_NOTICIA = ["pais","wti","oro","plata","t10","eurusd","btc","eth"], UMBRAL_SIGMA = 3;
 const cacheMov = {};
 function movimientos(s) {
-  const p = puntos(s), clave = s.id + fecha.value;
+  let p = puntos(s); const clave = s.id + fecha.value;
+  if (parcial(s, p.at(-1))) p = p.slice(0, -1);   // las alertas se calculan solo con cierres
   if (cacheMov[clave]) return cacheMov[clave];
   const pct = s.unidad_variacion === "%" && s.unidad !== "%";
   const d = p.map((x,i) => i ? (pct ? (x.v / p[i-1].v - 1) * 100 : x.v - p[i-1].v) : null);
