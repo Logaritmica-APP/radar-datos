@@ -103,7 +103,7 @@ const COPIA_INCLUIDA = /*COPIA*/null/*FIN_COPIA*/;
 const $ = s => document.querySelector(s);
 const fecha = $("#fecha"), vista = $("#vista"), menu = $("#menu"), estadoEl = $("#estado");
 const tabs = ["Inicio","Indicadores","Alertas","Noticias","Regulación"];
-const DESTACADOS = ["pais","ia","piba","empleo","brent","wti","t10","fed","eurusd","btc","eth"];
+const DESTACADOS = ["pais","ia","piba","empleo","brent","wti","oro","plata","t10","fed","eurusd","btc","eth"];
 const PENDIENTES_ECUADOR = [];
 let tab = "Inicio", detalle = null, datos = null, series = [], fuentes = {}, hoy = null;
 
@@ -254,7 +254,7 @@ function ficha(s) {
    2) cambio de rango de la Reserva Federal;
    3) movimiento diario inusual: variación mayor a 3 desviaciones estándar de las 250 variaciones previas. */
 /* Petróleo: solo WTI (referencia del crudo ecuatoriano); Brent se mueve casi igual y duplicaría avisos. */
-const DIARIAS_NOTICIA = ["pais","wti","t10","eurusd","btc","eth"], UMBRAL_SIGMA = 3;
+const DIARIAS_NOTICIA = ["pais","wti","oro","plata","t10","eurusd","btc","eth"], UMBRAL_SIGMA = 3;
 const cacheMov = {};
 function movimientos(s) {
   const p = puntos(s), clave = s.id + fecha.value;
