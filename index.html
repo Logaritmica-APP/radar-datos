@@ -36,6 +36,11 @@ select {width:100%; margin-top:5px}
 .up {color:var(--up)} .down {color:var(--down)} .flat {color:var(--flat)}
 .card {background:var(--panel); padding:14px; margin:10px 0; border:1px solid var(--line); border-radius:12px}
 .alert {border-left:3px solid var(--amber)}
+.orden {display:flex; justify-content:space-between; align-items:center; gap:8px; min-height:48px; border-bottom:1px solid var(--line)}
+.orden:last-child {border-bottom:0}
+.flecha {min-width:44px; min-height:44px; border:1px solid var(--line); background:transparent; color:inherit; border-radius:9px; font-size:18px}
+.flecha:disabled {opacity:.3}
+.aviso {width:100%; text-align:left; color:var(--amber); margin:4px 0 6px}
 .check {display:flex; align-items:center; gap:10px; min-height:44px; border-bottom:1px solid var(--line)}
 .check:last-child {border-bottom:0}
 .check input {width:20px; height:20px}
@@ -306,10 +311,24 @@ function ordenados(lista) {
 }
 function eleccion() {
   const grupos = [...new Set(ordenados([...series]).map(s=>s.grupo))];
+  const nombre = id => series.find(s=>s.id===id)?.nombre || id;
+  const lista = elegidos.filter(id=>series.some(s=>s.id===id));
   return `<button type="button" class="back" data-listo>‹ Listo</button>
+    <h2>Orden en Inicio</h2><small>Usa las flechas para cambiar el orden.</small>
+    <div class="card">${lista.map((id,i)=>`<div class="orden"><span>${i+1}. ${nombre(id)}</span>
+      <span><button type="button" class="flecha" data-subir="${id}" ${i?"":"disabled"} aria-label="Subir ${nombre(id)}">↑</button>
+      <button type="button" class="flecha" data-bajar="${id}" ${i<lista.length-1?"":"disabled"} aria-label="Bajar ${nombre(id)}">↓</button></span></div>`).join("")
+      || `<p class="muted">Aún no elegiste indicadores.</p>`}</div>
     <h2>Indicadores en Inicio</h2><small>Marca los que quieres ver en la pantalla de inicio.</small>
     ${grupos.map(g=>`<h2>${g}</h2><div class="card">${ordenados(series.filter(s=>s.grupo===g)).map(s=>`
       <label class="check"><input type="checkbox" data-sel="${s.id}" ${elegidos.includes(s.id)?"checked":""}> ${s.nombre}</label>`).join("")}</div>`).join("")}`;
+}
+function avisoNormas() {
+  /* Una sola línea en Inicio: normas publicadas en los últimos 7 días al corte y expedidas en los últimos 30
+     (así no cuenta como nueva una norma antigua que el emisor subió tarde a su sitio). */
+  const dias = f => (Date.parse(fecha.value) - Date.parse(f)) / 864e5;
+  const n = normasAlCorte().filter(x => dias(x.publicado || x.fecha) <= 7 && dias(x.fecha || x.publicado) <= 30).length;
+  return n ? `<button type="button" class="more aviso" data-tab="Regulación">📄 ${n} ${n===1?"norma nueva":"normas nuevas"} esta semana →</button>` : "";
 }
 const BOTON_ELEGIR = `<button type="button" class="more" data-personalizar>Elegir indicadores de Inicio ✎</button>`;
 function dibujar() {
@@ -320,7 +339,8 @@ function dibujar() {
   if (tab==="Inicio") {
     vista.innerHTML=`<h2>Indicadores al cierre</h2>
       <small>Color y flecha: última variación observada.</small>
-      ${ordenados(series.filter(s=>elegidos.includes(s.id))).map(fila).join("") ||
+      ${avisoNormas()}
+      ${elegidos.map(id=>series.find(s=>s.id===id)).filter(Boolean).map(fila).join("") ||
         `<p class="muted">No elegiste indicadores para Inicio.</p>`}
       ${BOTON_ELEGIR}
       <button class="more" data-tab="Indicadores">Ver todos los indicadores →</button>`;
@@ -337,7 +357,12 @@ function dibujar() {
 document.addEventListener("click",e=>{
   const b=e.target.closest("button");
   if (!b) return;
-  if (b.hasAttribute("data-personalizar")) personalizar=true;
+  if (b.dataset.subir || b.dataset.bajar) {
+    const id=b.dataset.subir||b.dataset.bajar, i=elegidos.indexOf(id), j=i+(b.dataset.subir?-1:1);
+    if (i<0 || j<0 || j>=elegidos.length) return;
+    [elegidos[i],elegidos[j]]=[elegidos[j],elegidos[i]]; guardarElegidos();
+  }
+  else if (b.hasAttribute("data-personalizar")) personalizar=true;
   else if (b.hasAttribute("data-listo")) personalizar=false;
   else if (b.dataset.id) detalle=b.dataset.id;
   else if (b.dataset.tab) {tab=b.dataset.tab; detalle=null; personalizar=false;}
@@ -349,7 +374,7 @@ document.addEventListener("change",e=>{
   const id=e.target.dataset?.sel;
   if (!id) return;
   elegidos = e.target.checked ? [...new Set([...elegidos,id])] : elegidos.filter(x=>x!==id);
-  guardarElegidos();
+  guardarElegidos(); dibujar();
 });
 fecha.addEventListener("change",dibujar);
 dibujar();
