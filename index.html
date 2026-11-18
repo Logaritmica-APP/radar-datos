@@ -42,7 +42,8 @@ select {width:100%; margin-top:5px}
 .up {color:var(--up)} .down {color:var(--down)} .flat {color:var(--flat)}
 .card {background:var(--panel); padding:14px; margin:10px 0; border:1px solid var(--line); border-radius:12px}
 .alert {border-left:3px solid var(--amber)}
-.atajos {margin:18px 0 8px}
+.periodo {margin-top:26px}
+.atajos {margin:10px 0 8px}
 .atajos .chips {margin-top:6px}
 .rango {display:grid; grid-template-columns:1fr 1fr; gap:10px}
 .rango label {display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted, #9aa)}
@@ -337,7 +338,7 @@ function rangoActual() {
 }
 function selectorRango() {
   const {desde, hasta} = rangoActual();
-  return `<div class="card rango">
+  return `<h2 class="periodo">Período</h2><div class="card rango">
     <label>Desde<input type="date" id="desde" value="${desde}" max="${hasta}"></label>
     <label>Hasta<input type="date" id="hasta" value="${hasta}" max="${fecha.value}"></label>
   </div>`;
@@ -345,7 +346,7 @@ function selectorRango() {
 function atajosRango() {
   const {desde, hasta} = rangoActual(), anio = hasta.slice(0, 4) + "-01-01";
   const rapido = (txt, d) => `<button type="button" class="chip ${desde===d?"activo":""}" data-desde="${d}">${txt}</button>`;
-  return `<div class="atajos"><small>Ver otro período:</small>
+  return `<div class="atajos"><small>Períodos rápidos:</small>
     <div class="chips">${rapido("7 días", restar(hasta, 7))}${rapido("30 días", restar(hasta, 30))}${rapido("Este año", anio)}</div></div>`;
 }
 function oracion(t) {
@@ -451,14 +452,14 @@ function dibujar() {
     const grupos = [...new Set(series.map(s=>s.grupo))].filter(g=>g!=="Ecuador").sort((a,b)=>(ORDEN.indexOf(a)+99)%99-(ORDEN.indexOf(b)+99)%99);
     vista.innerHTML=`<h2>Ecuador</h2>${ecuador()}` + grupos.map(g=>`<h2>${g}</h2>${series.filter(s=>s.grupo===g).map(fila).join("")}`).join("");
   } else if (tab==="Regulación") {
-    vista.innerHTML=`<h2>Radar regulatorio</h2><small>Normas generales para cooperativas, mutualistas y bancos.</small>${selectorRango()}<div id="normas">${regulacion()}</div>${atajosRango()}`;
+    vista.innerHTML=`<h2>Radar regulatorio</h2><small>Normas generales para cooperativas, mutualistas y bancos.</small><div id="normas">${regulacion()}</div>${selectorRango()}${atajosRango()}`;
     marcarVistas();
   } else if (tab==="Configuración") {
     vista.innerHTML=eleccion() + eleccionFuentes();
   } else if (tab==="Alertas") {
-    vista.innerHTML=`<h2>Alertas</h2><small>Datos publicados, decisiones de la Fed y movimientos inusuales.</small>${selectorRango()}${alertas()}${atajosRango()}`;
+    vista.innerHTML=`<h2>Alertas</h2><small>Datos publicados, decisiones de la Fed y movimientos inusuales.</small>${alertas()}${selectorRango()}${atajosRango()}`;
   } else {
-    vista.innerHTML=`<h2>Noticias</h2><small>Comunicados de fuentes oficiales.</small>${selectorRango()}${noticias()}${atajosRango()}`;
+    vista.innerHTML=`<h2>Noticias</h2><small>Comunicados de fuentes oficiales.</small>${noticias()}${selectorRango()}${atajosRango()}`;
   }
 }
 document.addEventListener("click",e=>{
