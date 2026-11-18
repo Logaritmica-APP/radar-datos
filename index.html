@@ -449,6 +449,8 @@ if (AppNativo) AppNativo.addListener("backButton", () => {
   else { AppNativo.exitApp(); return; }
   dibujar(); window.scrollTo(0, 0);
 });
+/* Al volver a la app (estaba en segundo plano), se descargan los datos más recientes. */
+if (AppNativo) AppNativo.addListener("resume", () => cargar());
 dibujar();
 cargar();
 </script>
