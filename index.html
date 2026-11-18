@@ -36,6 +36,9 @@ select {width:100%; margin-top:5px}
 .up {color:var(--up)} .down {color:var(--down)} .flat {color:var(--flat)}
 .card {background:var(--panel); padding:14px; margin:10px 0; border:1px solid var(--line); border-radius:12px}
 .alert {border-left:3px solid var(--amber)}
+.check {display:flex; align-items:center; gap:10px; min-height:44px; border-bottom:1px solid var(--line)}
+.check:last-child {border-bottom:0}
+.check input {width:20px; height:20px}
 .tag {color:var(--amber); font-size:12px; font-weight:700}
 .big {font-size:36px; font-weight:750; font-variant-numeric:tabular-nums}
 .spark {width:48px; height:26px}
@@ -291,21 +294,40 @@ function ecuador() {
     (PENDIENTES_ECUADOR.length ? `<div class="card alert"><small class="tag">PRÓXIMA ETAPA</small>
     <p>En preparación:</p><ul>${PENDIENTES_ECUADOR.map(x=>`<li>${x}</li>`).join("")}</ul></div>` : "");
 }
+/* Indicadores elegidos para Inicio: se guardan en el teléfono; la primera vez, los destacados. */
+const CLAVE_INICIO = "radar_inicio";
+let elegidos = null, personalizar = false;
+try { elegidos = JSON.parse(localStorage.getItem(CLAVE_INICIO) || "null"); } catch (e) {}
+if (!Array.isArray(elegidos)) elegidos = [...DESTACADOS];
+function guardarElegidos() { try { localStorage.setItem(CLAVE_INICIO, JSON.stringify(elegidos)); } catch (e) {} }
+function ordenados(lista) {
+  const grupo = s => s.grupo==="Ecuador" ? 0 : s.grupo==="Mercados" ? 1 : 2;
+  return lista.sort((a,b)=>grupo(a)-grupo(b) || (a.grupo==="Ecuador" ? ORDEN_ECUADOR.indexOf(a.id)-ORDEN_ECUADOR.indexOf(b.id) : 0));
+}
+function eleccion() {
+  const grupos = [...new Set(ordenados([...series]).map(s=>s.grupo))];
+  return `<button type="button" class="back" data-listo>‹ Listo</button>
+    <h2>Indicadores en Inicio</h2><small>Marca los que quieres ver en la pantalla de inicio.</small>
+    ${grupos.map(g=>`<h2>${g}</h2><div class="card">${ordenados(series.filter(s=>s.grupo===g)).map(s=>`
+      <label class="check"><input type="checkbox" data-sel="${s.id}" ${elegidos.includes(s.id)?"checked":""}> ${s.nombre}</label>`).join("")}</div>`).join("")}`;
+}
+const BOTON_ELEGIR = `<button type="button" class="more" data-personalizar>Elegir indicadores de Inicio ✎</button>`;
 function dibujar() {
   menu.innerHTML=tabs.map(t=>`<button type="button" data-tab="${t}" ${tab===t?'aria-current="page"':""}>${t}</button>`).join("");
   if (!datos) return;
+  if (personalizar) { vista.innerHTML=eleccion(); return; }
   if (detalle) { vista.innerHTML=ficha(series.find(s=>s.id===detalle)); return; }
   if (tab==="Inicio") {
     vista.innerHTML=`<h2>Indicadores al cierre</h2>
       <small>Color y flecha: última variación observada.</small>
-      ${DESTACADOS.map(id=>series.find(s=>s.id===id)).filter(Boolean).map(fila).join("")}
-      <button class="more" data-tab="Indicadores">Ver todos los indicadores →</button>
-      <h2>Radar regulatorio</h2>${regulacion(3)}
-      <h2>Noticias</h2>${noticias()}`;
+      ${ordenados(series.filter(s=>elegidos.includes(s.id))).map(fila).join("") ||
+        `<p class="muted">No elegiste indicadores para Inicio.</p>`}
+      ${BOTON_ELEGIR}
+      <button class="more" data-tab="Indicadores">Ver todos los indicadores →</button>`;
   } else if (tab==="Indicadores") {
     const ORDEN = ["Mercados","Criptoactivos"];
     const grupos = [...new Set(series.map(s=>s.grupo))].filter(g=>g!=="Ecuador").sort((a,b)=>(ORDEN.indexOf(a)+99)%99-(ORDEN.indexOf(b)+99)%99);
-    vista.innerHTML=`<h2>Ecuador</h2>${ecuador()}` + grupos.map(g=>`<h2>${g}</h2>${series.filter(s=>s.grupo===g).map(fila).join("")}`).join("");
+    vista.innerHTML=BOTON_ELEGIR + `<h2>Ecuador</h2>${ecuador()}` + grupos.map(g=>`<h2>${g}</h2>${series.filter(s=>s.grupo===g).map(fila).join("")}`).join("");
   } else if (tab==="Regulación") {
     vista.innerHTML=`<h2>Radar regulatorio</h2><small>Normas generales para cooperativas, mutualistas y bancos.</small>${regulacion()}`;
   } else {
@@ -315,11 +337,19 @@ function dibujar() {
 document.addEventListener("click",e=>{
   const b=e.target.closest("button");
   if (!b) return;
-  if (b.dataset.id) detalle=b.dataset.id;
-  else if (b.dataset.tab) {tab=b.dataset.tab; detalle=null;}
+  if (b.hasAttribute("data-personalizar")) personalizar=true;
+  else if (b.hasAttribute("data-listo")) personalizar=false;
+  else if (b.dataset.id) detalle=b.dataset.id;
+  else if (b.dataset.tab) {tab=b.dataset.tab; detalle=null; personalizar=false;}
   else if (b.hasAttribute("data-back")) detalle=null;
   else return;
   dibujar(); window.scrollTo(0,0);
+});
+document.addEventListener("change",e=>{
+  const id=e.target.dataset?.sel;
+  if (!id) return;
+  elegidos = e.target.checked ? [...new Set([...elegidos,id])] : elegidos.filter(x=>x!==id);
+  guardarElegidos();
 });
 fecha.addEventListener("change",dibujar);
 dibujar();
