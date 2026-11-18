@@ -36,6 +36,12 @@ select {width:100%; margin-top:5px}
 .up {color:var(--up)} .down {color:var(--down)} .flat {color:var(--flat)}
 .card {background:var(--panel); padding:14px; margin:10px 0; border:1px solid var(--line); border-radius:12px}
 .alert {border-left:3px solid var(--amber)}
+.rango {display:grid; grid-template-columns:1fr 1fr; gap:10px}
+.rango label {display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted, #9aa)}
+.rango input {min-height:44px; background:transparent; color:inherit; border:1px solid var(--line); border-radius:9px; padding:0 8px; color-scheme:dark}
+.chips {grid-column:1/-1; display:flex; gap:8px; flex-wrap:wrap}
+.chip {min-height:40px; padding:0 14px; border:1px solid var(--line); background:transparent; color:inherit; border-radius:20px}
+.chip.activo {border-color:var(--amber); color:var(--amber)}
 .orden {display:flex; justify-content:space-between; align-items:center; gap:8px; min-height:48px; border-bottom:1px solid var(--line)}
 .orden:last-child {border-bottom:0}
 .flecha {min-width:44px; min-height:44px; border:1px solid var(--line); background:transparent; color:inherit; border-radius:9px; font-size:18px}
@@ -259,7 +265,23 @@ function noticias() {
     <p>${x.texto}</p><button class="more" data-id="${x.id}">Ver evolución →</button></details>`).join("");
 }
 /* Radar regulatorio: normas generales detectadas por el recolector (título, objeto y ámbito tomados del texto oficial). */
-const EMISORES_PENDIENTES = ["Junta de Política y Regulación Financiera y Monetaria", "Superintendencia de Bancos"];
+/* Rango de fechas de la pestaña Regulación (por fecha de expedición). Por defecto: últimos 30 días al corte. */
+let rango = null;
+function restar(f, dias) { const d = new Date(f + "T12:00:00"); d.setDate(d.getDate() - dias); return d.toISOString().slice(0, 10); }
+function rangoActual() {
+  const hasta = rango?.hasta && rango.hasta <= fecha.value ? rango.hasta : fecha.value;
+  const desde = rango?.desde && rango.desde <= hasta ? rango.desde : restar(hasta, 30);
+  return {desde, hasta};
+}
+function selectorRango() {
+  const {desde, hasta} = rangoActual(), anio = hasta.slice(0, 4) + "-01-01";
+  const rapido = (txt, d) => `<button type="button" class="chip ${desde===d?"activo":""}" data-desde="${d}">${txt}</button>`;
+  return `<div class="card rango">
+    <label>Desde<input type="date" id="desde" value="${desde}" max="${hasta}"></label>
+    <label>Hasta<input type="date" id="hasta" value="${hasta}" max="${fecha.value}"></label>
+    <div class="chips">${rapido("7 días", restar(hasta, 7))}${rapido("30 días", restar(hasta, 30))}${rapido("Este año", anio)}</div>
+  </div>`;
+}
 function oracion(t) {
   if (!t) return "";
   const x = t.replace(/\s+/g, " ").replace(/“|”/g, "").trim();
@@ -284,14 +306,17 @@ function tarjetaNorma(n) {
   </div>`;
 }
 function regulacion(limite) {
-  const todas = normasAlCorte();
+  const {desde, hasta} = rangoActual();
+  const todas = normasAlCorte().filter(n => limite || ((n.fecha || n.publicado) >= desde && (n.fecha || n.publicado) <= hasta
+    && (n.publicado || n.fecha) <= hasta));
   const lista = todas.filter(n => n.tipo !== "Fe de erratas");
   const erratas = todas.filter(n => n.tipo === "Fe de erratas");
   const visibles = limite ? lista.slice(0, limite) : lista;
-  return (visibles.map(tarjetaNorma).join("") || `<p class="muted">Sin normas registradas hasta esta fecha.</p>`) +
+  return (limite ? "" : `<small>${lista.length} ${lista.length===1?"norma":"normas"} entre el ${corta(desde)} y el ${corta(hasta)}.</small>`) +
+    (visibles.map(tarjetaNorma).join("") || `<p class="muted">Sin normas en este período.</p>`) +
     (!limite && erratas.length ? `<details class="card"><summary><b>Correcciones (fe de erratas): ${erratas.length}</b></summary>${erratas.map(tarjetaNorma).join("")}</details>` : "") +
     (limite && lista.length > limite ? `<button class="more" data-tab="Regulación">Ver las ${lista.length} normas →</button>` : "") +
-    (limite ? "" : `<p class="muted">Títulos tomados de la resolución oficial. En preparación: ${EMISORES_PENDIENTES.join(" y ")}.</p>`);
+    (limite ? "" : `<p class="muted">Títulos tomados de la resolución oficial. Emisores: SEPS, Junta de Política y Regulación Financiera y Monetaria y Superintendencia de Bancos.</p>`);
 }
 const ORDEN_ECUADOR = ["pais","im","ia","iac","empleo","piba","pibt"];
 function ecuador() {
@@ -349,7 +374,7 @@ function dibujar() {
     const grupos = [...new Set(series.map(s=>s.grupo))].filter(g=>g!=="Ecuador").sort((a,b)=>(ORDEN.indexOf(a)+99)%99-(ORDEN.indexOf(b)+99)%99);
     vista.innerHTML=BOTON_ELEGIR + `<h2>Ecuador</h2>${ecuador()}` + grupos.map(g=>`<h2>${g}</h2>${series.filter(s=>s.grupo===g).map(fila).join("")}`).join("");
   } else if (tab==="Regulación") {
-    vista.innerHTML=`<h2>Radar regulatorio</h2><small>Normas generales para cooperativas, mutualistas y bancos.</small>${regulacion()}`;
+    vista.innerHTML=`<h2>Radar regulatorio</h2><small>Normas generales para cooperativas, mutualistas y bancos.</small>${selectorRango()}<div id="normas">${regulacion()}</div>`;
   } else {
     vista.innerHTML=`<h2>Noticias</h2>${noticias()}`;
   }
@@ -357,6 +382,7 @@ function dibujar() {
 document.addEventListener("click",e=>{
   const b=e.target.closest("button");
   if (!b) return;
+  if (b.dataset.desde) { rango = {...rangoActual(), desde: b.dataset.desde}; dibujar(); return; }
   if (b.dataset.subir || b.dataset.bajar) {
     const id=b.dataset.subir||b.dataset.bajar, i=elegidos.indexOf(id), j=i+(b.dataset.subir?-1:1);
     if (i<0 || j<0 || j>=elegidos.length) return;
@@ -371,6 +397,10 @@ document.addEventListener("click",e=>{
   dibujar(); window.scrollTo(0,0);
 });
 document.addEventListener("change",e=>{
+  if (e.target.id==="desde" || e.target.id==="hasta") {
+    if (e.target.value) { rango = {...rangoActual(), [e.target.id]: e.target.value}; dibujar(); }
+    return;
+  }
   const id=e.target.dataset?.sel;
   if (!id) return;
   elegidos = e.target.checked ? [...new Set([...elegidos,id])] : elegidos.filter(x=>x!==id);
