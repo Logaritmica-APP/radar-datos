@@ -59,6 +59,10 @@ select {width:100%; margin-top:5px}
 .check {display:flex; align-items:center; gap:10px; min-height:44px; border-bottom:1px solid var(--line)}
 .check:last-child {border-bottom:0}
 .check input {width:20px; height:20px}
+.plegable summary {cursor:pointer; min-height:44px; display:flex; align-items:center; gap:6px; list-style:none}
+.plegable summary::-webkit-details-marker {display:none}
+.plegable summary::before {content:"▸"; color:var(--flat); transition:transform .15s}
+.plegable[open] summary::before {transform:rotate(90deg)}
 .tasas {width:100%; border-collapse:collapse; margin:8px 0; font-size:14px}
 .tasas th {text-align:right; font-weight:600; color:var(--flat); padding:6px 4px; border-bottom:1px solid var(--line)}
 .tasas th:first-child, .tasas td:first-child {text-align:left}
@@ -404,10 +408,11 @@ function tablaTasas() {
   }).filter(Boolean);
   if (!filas.length) return "";
   const mes = etiqueta(filas[0].m, filas[0].pm.f);
-  return `<div class="card"><small>Vigentes en ${mes} · % efectivo anual</small>
+  return `<details class="card plegable"><summary><strong>Tasas por segmento</strong> <small>· ${filas.length} segmentos · ${mes}</small></summary>
+    <small>Vigentes en ${mes} · % efectivo anual</small>
     <table class="tasas"><thead><tr><th>Segmento</th><th>Máxima</th><th>Referencial</th></tr></thead><tbody>
     ${filas.map(x => `<tr data-id="${x.m.id}"><td>${x.nombre}</td><td>${num(x.pm.v,2)}</td><td>${x.pr ? num(x.pr.v,2) : "–"}</td></tr>`).join("")}
-    </tbody></table><small>Máxima: fijada por la Junta. Referencial: promedio ponderado del mercado (BCE). Toca un segmento para ver su evolución.</small></div>`;
+    </tbody></table><small>Máxima: fijada por la Junta. Referencial: promedio ponderado del mercado (BCE). Toca un segmento para ver su evolución.</small></details>`;
 }
 function ecuador() {
   return series.filter(s=>s.grupo==="Ecuador").sort((a,b)=>ORDEN_ECUADOR.indexOf(a.id)-ORDEN_ECUADOR.indexOf(b.id)).map(fila).join("") +
