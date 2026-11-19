@@ -59,6 +59,8 @@ select {width:100%; margin-top:5px}
 .check {display:flex; align-items:center; gap:10px; min-height:44px; border-bottom:1px solid var(--line)}
 .check:last-child {border-bottom:0}
 .check input {width:20px; height:20px}
+.seccion {margin:18px 0 6px}
+.seccion > summary {font-size:17px; padding:4px 0; border-bottom:1px solid var(--line); margin-bottom:8px}
 .plegable summary {cursor:pointer; min-height:44px; display:flex; align-items:center; gap:6px; list-style:none}
 .plegable summary::-webkit-details-marker {display:none}
 .plegable summary::before {content:"▸"; color:var(--flat); transition:transform .15s}
@@ -374,8 +376,20 @@ function oracion(t) {
   /* Pasa a minúsculas salvo los códigos de resolución (SEPS-..., JPRFM-...) */
   return x.split(" ").map((w, i) => /^[A-Z]{2,}-[A-Z0-9-]+$/.test(w) ? w : (i === 0 ? w.charAt(0) + w.slice(1).toLowerCase() : w.toLowerCase())).join(" ");
 }
+/* Emisores de normas: secciones en Regulación y casillas en Configuración (se guardan en el teléfono). */
+const EMISORES = [["SEPS", "SEPS"], ["JPRFM", "Junta de Política y Regulación Financiera y Monetaria"],
+                  ["SB", "Superintendencia de Bancos"]];
+const CLAVE_EMISORES = "radar_emisores_apagados";
+let emisoresApagados = [];
+try { emisoresApagados = JSON.parse(localStorage.getItem(CLAVE_EMISORES) || "[]"); } catch (e) {}
+function guardarEmisores() { try { localStorage.setItem(CLAVE_EMISORES, JSON.stringify(emisoresApagados)); } catch (e) {} }
+function eleccionEmisores() {
+  return `<h2>Emisores de normas</h2><small>Marca las instituciones cuyas normas quieres ver en Regulación.</small>
+    <div class="card">${EMISORES.map(([id, nombre]) => `
+      <label class="check"><input type="checkbox" data-emisor="${id}" ${emisoresApagados.includes(id) ? "" : "checked"}> ${nombre}</label>`).join("")}</div>`;
+}
 function normasAlCorte() {
-  return (datos.normas || []).filter(n => (n.publicado || n.fecha || "") <= fecha.value)
+  return (datos.normas || []).filter(n => (n.publicado || n.fecha || "") <= fecha.value && !emisoresApagados.includes(n.emisor))
     .sort((a, b) => (b.fecha || b.publicado).localeCompare(a.fecha || a.publicado));
 }
 function tarjetaNorma(n) {
@@ -383,7 +397,7 @@ function tarjetaNorma(n) {
   const dias = (Date.parse(fecha.value) - Date.parse(ref)) / 864e5;  /* nueva: expedida en los últimos 30 días */
   return `<div class="card alert">
     <small class="tag">${dias <= 30 ? "NUEVA · " : ""}${n.emisor} · ${corta(ref)}</small>
-    <h3>${oracion(n.titulo)}</h3>
+    <h3>${oracion(n.titulo).replace(/\s+([,.;:])/g, "$1")}</h3>
     <small>${n.id}</small><br>
     <a href="${n.url}" target="_blank" rel="noopener">Ver resolución oficial ↗</a>
   </div>`;
@@ -395,11 +409,22 @@ function regulacion(limite) {
   const lista = todas.filter(n => n.tipo !== "Fe de erratas");
   const erratas = todas.filter(n => n.tipo === "Fe de erratas");
   const visibles = limite ? lista.slice(0, limite) : lista;
-  return (limite ? "" : `<small>${lista.length} ${lista.length===1?"norma":"normas"} entre el ${corta(desde)} y el ${corta(hasta)}.</small>`) +
-    (visibles.map(tarjetaNorma).join("") || `<p class="muted">Sin normas en este período.</p>`) +
-    (!limite && erratas.length ? `<details class="card"><summary><b>Correcciones (fe de erratas): ${erratas.length}</b></summary>${erratas.map(tarjetaNorma).join("")}</details>` : "") +
+  if (!limite) {
+    const activos = EMISORES.filter(([id]) => !emisoresApagados.includes(id));
+    if (!activos.length) return `<p class="muted">No elegiste emisores de normas.</p><button class="more" data-tab="Configuración">Elegirlos en Configuración →</button>`;
+    return `<small>${lista.length} ${lista.length===1?"norma":"normas"} entre el ${corta(desde)} y el ${corta(hasta)}.</small>` +
+      activos.map(([id, nombre]) => {
+        const l = lista.filter(n => n.emisor === id), er = erratas.filter(n => n.emisor === id);
+        return `<details class="seccion plegable" ${l.length || er.length ? "open" : ""}><summary><strong>${nombre}</strong> <small>· ${l.length} ${l.length===1?"norma":"normas"}</small></summary>
+          ${l.map(tarjetaNorma).join("") || `<p class="muted">Sin normas en este período.</p>`}
+          ${er.length ? `<details class="card"><summary><b>Correcciones (fe de erratas): ${er.length}</b></summary>${er.map(tarjetaNorma).join("")}</details>` : ""}
+        </details>`;
+      }).join("") +
+      `<p class="muted">Títulos tomados de la resolución oficial. Emisores: Configuración ⚙.</p>`;
+  }
+  return (visibles.map(tarjetaNorma).join("") || `<p class="muted">Sin normas en este período.</p>`) +
     (limite && lista.length > limite ? `<button class="more" data-tab="Regulación">Ver las ${lista.length} normas →</button>` : "") +
-    (limite ? "" : `<p class="muted">Títulos tomados de la resolución oficial. Emisores: SEPS, Junta de Política y Regulación Financiera y Monetaria y Superintendencia de Bancos.</p>`);
+    "";
 }
 const ORDEN_ECUADOR = ["pais","reservas","im","ia","iac","empleo","piba","pibt"];
 /* Tasas por segmento: no van como filas sueltas; se muestran en una tabla (máxima frente a referencial). */
@@ -490,7 +515,7 @@ function dibujar() {
     vista.innerHTML=`<h2>Radar regulatorio</h2><small>Normas generales para cooperativas, mutualistas y bancos.</small><div id="normas">${regulacion()}</div>${selectorRango()}${atajosRango()}`;
     marcarVistas();
   } else if (tab==="Configuración") {
-    vista.innerHTML=eleccion() + eleccionFuentes();
+    vista.innerHTML=eleccion() + eleccionEmisores() + eleccionFuentes();
   } else if (tab==="Alertas") {
     vista.innerHTML=`<h2>Alertas</h2><small>Datos publicados, decisiones de la Fed y movimientos inusuales.</small>${alertas()}${selectorRango()}${atajosRango()}`;
   } else {
@@ -516,6 +541,11 @@ document.addEventListener("change",e=>{
   if (e.target.id==="desde" || e.target.id==="hasta") {
     if (e.target.value) { rango = {...rangoActual(), [e.target.id]: e.target.value}; dibujar(); }
     return;
+  }
+  if (e.target.dataset?.emisor) {
+    const f = e.target.dataset.emisor;
+    emisoresApagados = e.target.checked ? emisoresApagados.filter(x => x !== f) : [...new Set([...emisoresApagados, f])];
+    guardarEmisores(); return;
   }
   if (e.target.dataset?.fuente) {
     const f = e.target.dataset.fuente;
