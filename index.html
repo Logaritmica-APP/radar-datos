@@ -55,6 +55,8 @@ select {width:100%; margin-top:5px}
 .orden:last-child {border-bottom:0}
 .flecha {min-width:44px; min-height:44px; border:1px solid var(--line); background:transparent; color:inherit; border-radius:9px; font-size:18px}
 .flecha:disabled {opacity:.3}
+.atrasado {color:var(--amber)}
+p.atrasado {font-size:14px}
 .aviso {width:100%; text-align:left; color:var(--amber); margin:4px 0 6px}
 .check {display:flex; align-items:center; gap:10px; min-height:44px; border-bottom:1px solid var(--line)}
 .check:last-child {border-bottom:0}
@@ -226,6 +228,25 @@ function escalones(p) {
   if (p.length && fecha.value > p.at(-1).f) out.push({...p.at(-1), f:fecha.value, paso:true});
   return out;
 }
+/* Dato atrasado: el último dato es más viejo de lo normal para su fuente (la fuente no ha publicado).
+   Diarias: días hábiles desde el último dato; mensuales y trimestrales: días corridos desde la fecha del dato. */
+const RETRASO = {
+  bce: ["habiles", 2, "un día hábil"], bce_oro: ["habiles", 2, "un día hábil"], tesoro: ["habiles", 2, "un día hábil"],
+  bce_europeo: ["habiles", 2, "un día hábil"], coingecko: ["corridos", 2, "un día"], bcrp: ["habiles", 4, "unos 2 días hábiles"],
+  eia: ["habiles", 8, "una semana"], inec_ipc: ["corridos", 55, "unos 15 días después del fin de mes"],
+  inec_empleo: ["corridos", 60, "unos 22 días después del fin de mes"], bce_reservas: ["corridos", 55, "a mediados del mes siguiente"],
+  bce_tasas: ["corridos", 40, "antes de empezar cada mes"], bce_pib: ["corridos", 190, "unos 3 meses después del trimestre"]};
+function habilesEntre(a, b) {
+  let n = 0; const d = new Date(a + "T12:00:00"), fin = new Date(b + "T12:00:00");
+  while (d < fin) { d.setDate(d.getDate() + 1); if (d.getDay() % 6) n++; }
+  return n;
+}
+function atrasado(s, u) {
+  const r = RETRASO[s.fuente_id];
+  if (!r || !u || s.es_rango) return null;              // la Fed solo cambia en sus reuniones: nunca "atrasada"
+  const n = r[0] === "habiles" ? habilesEntre(u.f, fecha.value) : (Date.parse(fecha.value) - Date.parse(u.f)) / 864e5;
+  return n > r[1] ? {n: Math.round(n), tipo: r[0], normal: r[2]} : null;
+}
 /* Precio del momento (aún no es cierre): se marca como parcial con la hora de la consulta. */
 function parcial(s, u) {
   const p = datos?.provisionales?.[s.id];
@@ -235,7 +256,7 @@ function fila(s) {
   const p=puntos(s), u=p.at(-1), e=estado(s,p);
   if (!u) return "";
   return `<button type="button" class="row" data-id="${s.id}">
-    <span><strong>${s.nombre}</strong><small>${etiqueta(s,u.f)}${parcial(s,u) ? `, ${parcial(s,u).hora} (parcial)` : ""} · ${(fuentes[s.fuente_id]?.cita || "").replace("Fuente: ","").split(" · ")[0]}${s.fuente_id==="coingecko" ? " · prueba" : ""}</small></span>
+    <span><strong>${s.nombre}</strong><small>${etiqueta(s,u.f)}${parcial(s,u) ? `, ${parcial(s,u).hora} (parcial)` : ""}${atrasado(s,u) ? ` · <span class="atrasado">dato atrasado</span>` : ""} · ${(fuentes[s.fuente_id]?.cita || "").replace("Fuente: ","").split(" · ")[0]}${s.fuente_id==="coingecko" ? " · prueba" : ""}</small></span>
     ${grafico(s.es_rango ? escalones(p.slice(-6)) : p.slice(-20),e.cls,true)}
     <span class="quote ${e.cls}"><strong>${valor(s,u)}</strong><small>${e.texto} ›</small></span>
   </button>`;
@@ -250,6 +271,7 @@ function ficha(s) {
     <h2>${s.nombre}</h2>
     <div class="big ${e.cls}">${valor(s,u)}</div>
     <b class="${e.cls}">${e.texto}</b>
+    ${atrasado(s,u) ? `<p class="atrasado">Dato atrasado: la fuente no ha publicado nada nuevo desde el ${corta(u.f)}. Lo normal es que publique con un rezago de ${atrasado(s,u).normal}. Se mostrará apenas lo publique.</p>` : ""}
     ${parcial(s,u) ? `<p class="muted">Precio parcial consultado a las ${parcial(s,u).hora}; se reemplaza por el cierre del día (19:00).</p>` : ""}
     <p>Dato ${s.frecuencia==="diaria"?"del":"de"} <b>${etiqueta(s,u.f)}</b>${a?`; comparación con ${s.frecuencia==="diaria"?"el ":""}${etiqueta(s,a.f)}`:""}.</p>
     ${u.pub!==u.f ? `<p class="muted">Publicado el ${corta(u.pub)}${u.est ? " (fecha estimada)" : ""}.</p>` : ""}
