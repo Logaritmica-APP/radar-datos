@@ -271,19 +271,40 @@ function ficha(s) {
    2) cambio de rango de la Reserva Federal;
    3) movimiento diario inusual: variación mayor a 3 desviaciones estándar de las 250 variaciones previas. */
 /* Petróleo: solo WTI (referencia del crudo ecuatoriano); Brent se mueve casi igual y duplicaría avisos. */
-const DIARIAS_NOTICIA = ["pais","wti","oro","plata","t10","eurusd","btc","eth"], UMBRAL_SIGMA = 3;
+const DIARIAS_NOTICIA = ["pais","wti","oro","plata","t10","eurusd","btc","eth"], UMBRAL_INUSUAL = 3, DIAS_ACUM = 5;
+/* Sensibilidad (Configuración): umbral de "movimiento relevante" en desviaciones estándar. El inusual es siempre 3. */
+const SENSIBILIDAD = {alta: ["Alta", 1.75], media: ["Media", 2], baja: ["Baja", 2.5]};
+const CLAVE_SENS = "radar_sensibilidad";
+let sensibilidad = "media";
+try { sensibilidad = localStorage.getItem(CLAVE_SENS) || "media"; } catch (e) {}
+if (!SENSIBILIDAD[sensibilidad]) sensibilidad = "media";
+function eleccionSensibilidad() {
+  return `<h2>Sensibilidad de alertas</h2><small>Cuántas desviaciones estándar de su movimiento normal debe moverse un indicador para avisar.</small>
+    <div class="card">${Object.entries(SENSIBILIDAD).map(([id, [nombre, k]]) => `
+      <label class="check"><input type="radio" name="sens" data-sens="${id}" ${sensibilidad === id ? "checked" : ""}>
+        ${nombre} <small>· desde ${num(k, k % 1 ? 2 : 0)} desviaciones${id === "media" ? " (recomendada)" : ""}</small></label>`).join("")}</div>`;
+}
 const cacheMov = {};
+/* Movimientos de cada indicador (solo cierres):
+   - diario: |variación del día − media| ≥ k·σ  (σ: desviación de las 250 variaciones diarias previas);
+   - acumulado: variación de 5 días ≥ k·σ·√5, si ese día no hubo alerta diaria ni otra acumulada en los 4 días previos. */
 function movimientos(s) {
-  let p = puntos(s); const clave = s.id + fecha.value;
-  if (parcial(s, p.at(-1))) p = p.slice(0, -1);   // las alertas se calculan solo con cierres
+  let p = puntos(s); const k = SENSIBILIDAD[sensibilidad][1], clave = s.id + fecha.value + k;
+  if (parcial(s, p.at(-1))) p = p.slice(0, -1);
   if (cacheMov[clave]) return cacheMov[clave];
   const pct = s.unidad_variacion === "%" && s.unidad !== "%";
-  const d = p.map((x,i) => i ? (pct ? (x.v / p[i-1].v - 1) * 100 : x.v - p[i-1].v) : null);
-  const out = [];
+  const cambio = (a, b) => pct ? (b.v / a.v - 1) * 100 : b.v - a.v;
+  const d = p.map((x,i) => i ? cambio(p[i-1], x) : null);
+  const out = []; let ultimaAcum = -99;
   for (let i = 61; i < p.length; i++) {
     const prev = d.slice(Math.max(1, i - 250), i), m = prev.reduce((a,b)=>a+b,0) / prev.length;
     const sd = Math.sqrt(prev.reduce((a,b)=>a+(b-m)**2,0) / (prev.length - 1));
-    if (sd > 0 && Math.abs(d[i] - m) >= UMBRAL_SIGMA * sd) out.push({i, p, z:(d[i]-m)/sd});
+    if (!(sd > 0)) continue;
+    const z = (d[i] - m) / sd;
+    if (Math.abs(z) >= k) { out.push({i, p, z, tipo: Math.abs(z) >= UMBRAL_INUSUAL ? "inusual" : "relevante"}); continue; }
+    if (i - DIAS_ACUM < 0 || i - ultimaAcum < DIAS_ACUM) continue;
+    const acum = cambio(p[i - DIAS_ACUM], p[i]), zA = (acum - m * DIAS_ACUM) / (sd * Math.sqrt(DIAS_ACUM));
+    if (Math.abs(zA) >= k) { out.push({i, p, z: zA, tipo: "acumulado", acum, desdeF: p[i - DIAS_ACUM]}); ultimaAcum = i; }
   }
   return cacheMov[clave] = out;
 }
@@ -311,16 +332,22 @@ function alertas() {
     const s = S(id); if (!s) continue;
     for (const m of movimientos(s)) {
       const u = m.p[m.i], a = m.p[m.i-1]; if (!dentro(u.f)) continue;
-      const e = estado(s,[a,u]);
-      items.push({fecha:u.f, id, tag:`${s.grupo.toUpperCase()} · MOVIMIENTO INUSUAL`, titulo:`${s.nombre} ${e.cls==="up"?"sube":"baja"} con fuerza: ${valor(s,u)}`,
-        texto:`Variación del día: ${e.texto} (${num(Math.abs(m.z),1)} veces su desviación típica diaria del último año). Cierre anterior: ${valor(s,a)} el ${corta(a.f)}.`});
+      const e = estado(s,[a,u]), sube = m.z > 0;
+      if (m.tipo === "acumulado") {
+        const e5 = estado(s,[m.desdeF,u]);
+        items.push({fecha:u.f, id, tag:`${s.grupo.toUpperCase()} · MOVIMIENTO ACUMULADO`, titulo:`${s.nombre} ${sube?"acumula una subida":"acumula una caída"} de ${e5.texto.replace(/^[↑↓=]\s*[+−-]?/,"")} en ${DIAS_ACUM} cierres: ${valor(s,u)}`,
+          texto:`Desde ${valor(s,m.desdeF)} el ${corta(m.desdeF.f)}. Ningún día por separado fue extremo, pero el movimiento acumulado equivale a ${num(Math.abs(m.z),1)} desviaciones típicas para ese plazo.`});
+      } else {
+        items.push({fecha:u.f, id, tag:`${s.grupo.toUpperCase()} · MOVIMIENTO ${m.tipo==="inusual"?"INUSUAL":"RELEVANTE"}`, titulo:`${s.nombre} ${sube?"sube":"baja"}${m.tipo==="inusual"?" con fuerza":""}: ${valor(s,u)}`,
+          texto:`Variación del día: ${e.texto} (${num(Math.abs(m.z),1)} veces su desviación típica diaria del último año). Cierre anterior: ${valor(s,a)} el ${corta(a.f)}.`});
+      }
     }
   }
   items.sort((x,y)=>y.fecha.localeCompare(x.fecha) || x.id.localeCompare(y.id));
   return `<small>${items.length} ${items.length===1?"alerta":"alertas"} entre el ${corta(desde)} y el ${corta(hasta)}.</small>` +
     (items.map(x=>`<details class="card"><summary><small>${corta(x.fecha)} · ${x.tag}</small><h3>${x.titulo}</h3></summary>
     <p>${x.texto}</p><button class="more" data-id="${x.id}">Ver evolución →</button></details>`).join("") || `<p class="muted">Sin alertas en este período.</p>`) +
-    `<p class="muted">Calculadas por la app con los indicadores (sin inteligencia artificial). Movimiento inusual: variación diaria mayor a ${num(UMBRAL_SIGMA,1)} desviaciones estándar de las 250 anteriores.</p>`;
+    `<p class="muted">Calculadas por la app con los indicadores (sin inteligencia artificial). Movimiento relevante: variación del día de al menos ${num(SENSIBILIDAD[sensibilidad][1],2)} desviaciones estándar (sensibilidad ${SENSIBILIDAD[sensibilidad][0].toLowerCase()}, en Configuración ⚙); inusual: 3 o más; acumulado: movimiento de ${DIAS_ACUM} cierres con el mismo criterio ajustado al plazo.</p>`;
 }
 /* Radar regulatorio: normas generales detectadas por el recolector (título, objeto y ámbito tomados del texto oficial). */
 /* Noticias: comunicados de fuentes oficiales (título, fecha y enlace al original). Fuentes elegidas en Configuración. */
@@ -515,7 +542,7 @@ function dibujar() {
     vista.innerHTML=`<h2>Radar regulatorio</h2><small>Normas generales para cooperativas, mutualistas y bancos.</small><div id="normas">${regulacion()}</div>${selectorRango()}${atajosRango()}`;
     marcarVistas();
   } else if (tab==="Configuración") {
-    vista.innerHTML=eleccion() + eleccionEmisores() + eleccionFuentes();
+    vista.innerHTML=eleccion() + eleccionSensibilidad() + eleccionEmisores() + eleccionFuentes();
   } else if (tab==="Alertas") {
     vista.innerHTML=`<h2>Alertas</h2><small>Datos publicados, decisiones de la Fed y movimientos inusuales.</small>${alertas()}${selectorRango()}${atajosRango()}`;
   } else {
@@ -540,6 +567,11 @@ document.addEventListener("click",e=>{
 document.addEventListener("change",e=>{
   if (e.target.id==="desde" || e.target.id==="hasta") {
     if (e.target.value) { rango = {...rangoActual(), [e.target.id]: e.target.value}; dibujar(); }
+    return;
+  }
+  if (e.target.dataset?.sens) {
+    sensibilidad = e.target.dataset.sens;
+    try { localStorage.setItem(CLAVE_SENS, sensibilidad); } catch (err) {}
     return;
   }
   if (e.target.dataset?.emisor) {
